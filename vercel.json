@@ -5,10 +5,11 @@
   "buildCommand": "pnpm run build:vercel",
   "outputDirectory": "artifacts/resource-balance/dist/public",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/[[...path]].mjs": {
+    "api/index.mjs": {
       "maxDuration": 10,
       "includeFiles": "artifacts/api-server/dist/**"
     }

@@ -9,6 +9,14 @@ const app: Express = express();
 
 if (process.env.VERCEL) {
   app.set("trust proxy", 1);
+  app.use((req, _res, next) => {
+    const forwarded = req.headers["x-forwarded-uri"];
+    if (typeof forwarded === "string" && forwarded.startsWith("/api")) {
+      req.url = forwarded;
+      req.originalUrl = forwarded;
+    }
+    next();
+  });
 }
 
 app.use(
