@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build:vercel",
+  "outputDirectory": "artifacts/resource-balance/dist/public",
+  "functions": {
+    "api/[[...path]].ts": {
+      "maxDuration": 10,
+      "includeFiles": "{artifacts/api-server/src/**,lib/**}"
+    }
+  }
+}
