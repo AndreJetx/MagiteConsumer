@@ -7,7 +7,6 @@ import {
   Copy,
   Download,
   Edit3,
-  Gauge,
   Layers3,
   LogOut,
   Pencil,
@@ -33,7 +32,7 @@ import {
 } from 'recharts';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import NotFound from '@/pages/not-found';
-import { LoginScreen } from '@/pages/login';
+import { LoginScreen, LoginBackdrop } from '@/pages/login';
 import { AuthError, fetchAppState, fetchCurrentUser, logout, persistAppState, type AuthUser } from '@/lib/api';
 import { readCachedState, writeCachedState } from '@/lib/storage';
 import { cleanInput, sanitizeImportedState, sanitizeInt, sanitizeText } from '@/lib/sanitize';
@@ -502,7 +501,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'resource-balance-cenarios.json';
+    anchor.download = 'magites-opressoras-cenarios.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -516,7 +515,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
       if (!imported) throw new Error('invalid');
       setState(imported);
     } catch {
-      window.alert('Não foi possível importar este arquivo. Verifique se ele é um JSON do Resource Balance.');
+      window.alert('Não foi possível importar este arquivo. Verifique se ele é um JSON das Magites Opressoras.');
     }
   };
 
@@ -533,11 +532,13 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   return (
     <div className="app-frame">
       <header className="topbar">
-        <div className="brand-lockup" data-testid="brand-resource-balance">
-          <div className="brand-mark"><Gauge size={20} /></div>
+        <div className="brand-lockup" data-testid="brand-magites-opressoras">
+          <div className="brand-mark">
+            <img src="/brand-icon.png" alt="" width={38} height={38} />
+          </div>
           <div>
-            <div className="brand-name">Resource Balance</div>
-            <div className="brand-subtitle">clareza para cada recurso</div>
+            <div className="brand-name">Magites Opressoras</div>
+            <div className="brand-subtitle">Fique rico ou morra tentando</div>
           </div>
         </div>
         <div className="topbar-actions">
@@ -838,7 +839,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                 && <div className="empty-source">Adicione uma entrada ou saída acima para começar a leitura.</div>}
             </div>
           </section>
-          <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Resource Balance sincroniza os cenários com o Supabase e mantém uma cópia local neste dispositivo.</footer>
+          <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Magites Opressoras sincroniza os cenários com o Supabase e mantém uma cópia local neste dispositivo.</footer>
         </main>
       </div>
 
@@ -957,8 +958,9 @@ function AuthGate() {
   if (user === undefined) {
     return (
       <div className="app-frame login-frame">
+        <LoginBackdrop />
         <div className="login-card card pad">
-          <div className="brand-name">Resource Balance</div>
+          <div className="brand-name">Magites Opressoras</div>
           <p className="login-copy">Carregando sua sessão...</p>
         </div>
       </div>

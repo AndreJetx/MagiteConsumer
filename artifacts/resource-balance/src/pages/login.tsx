@@ -1,7 +1,14 @@
 import { useState, type FormEvent } from 'react';
-import { Gauge } from 'lucide-react';
 import { login, register, type AuthUser } from '@/lib/api';
 import { cleanInput } from '@/lib/sanitize';
+
+export function LoginBackdrop() {
+  return (
+    <video className="login-video" autoPlay muted loop playsInline poster="/login-bg.png">
+      <source src="/login-bg.mp4" type="video/mp4" />
+    </video>
+  );
+}
 
 export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -28,11 +35,14 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => vo
 
   return (
     <div className="app-frame login-frame">
+      <LoginBackdrop />
       <div className="login-card card pad">
         <div className="brand-lockup">
-          <div className="brand-mark"><Gauge size={20} /></div>
+          <div className="brand-mark">
+            <img src="/favicon.png" alt="" width={38} height={38} />
+          </div>
           <div>
-            <div className="brand-name">Resource Balance</div>
+            <div className="brand-name">Magites Opressoras</div>
             <div className="brand-subtitle">entre para ver seus cenários</div>
           </div>
         </div>
