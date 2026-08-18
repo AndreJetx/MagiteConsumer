@@ -1,4 +1,5 @@
 import { pool } from "./client";
+import { rlsStatements } from "./rls";
 import { RESOURCE_SCHEMA } from "./schema";
 
 const schema = RESOURCE_SCHEMA;
@@ -110,12 +111,7 @@ const statements = [
   `alter table ${schema}.scenarios add column if not exists user_id text`,
   `create index if not exists scenarios_user_id_idx on ${schema}.scenarios (user_id)`,
   `create index if not exists app_sessions_user_id_idx on ${schema}.app_sessions (user_id)`,
-  `alter table ${schema}.scenarios enable row level security`,
-  `alter table ${schema}.sources enable row level security`,
-  `alter table ${schema}.app_settings enable row level security`,
-  `alter table ${schema}.app_users enable row level security`,
-  `alter table ${schema}.app_sessions enable row level security`,
-  `alter table ${schema}.user_settings enable row level security`,
+  ...rlsStatements(schema),
 ];
 
 async function apply() {
@@ -140,9 +136,26 @@ async function apply() {
       and table_name in ('scenarios', 'sources', 'app_settings', 'app_users', 'app_sessions', 'user_settings')
     order by table_name
   `);
+  const rls = await pool.query(
+    `
+    select c.relname as table_name, c.relrowsecurity as rls_enabled
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = $1
+      and c.relname = any($2::text[])
+    order by c.relname
+  `,
+    [schema, ["scenarios", "sources", "app_settings", "app_users", "app_sessions", "user_settings"]],
+  );
   console.log(
     `Schema ${schema}:`,
     tables.rows.map((row) => row.table_name).join(", ") || "(vazio)",
+  );
+  console.log(
+    "RLS:",
+    rls.rows
+      .map((row) => `${row.table_name}=${row.rls_enabled ? "on" : "off"}`)
+      .join(", ") || "(nenhuma tabela)",
   );
   if (leftover.rows.length > 0) {
     console.warn(

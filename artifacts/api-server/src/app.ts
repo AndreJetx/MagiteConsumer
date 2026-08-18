@@ -43,6 +43,9 @@ app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
 app.use("/api", router);
+if (process.env.VERCEL) {
+  app.use(router);
+}
 
 app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   logger.error({ err }, "Unhandled API error");

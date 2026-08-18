@@ -109,7 +109,8 @@ function parseSourceDate(value?: string): Date {
 }
 
 function stampSource(source: Source): Source {
-  return source.addedAt ? source : { ...source, addedAt: new Date().toISOString() };
+  if (source.addedAt || source.frequency === 'once') return source;
+  return { ...source, addedAt: new Date().toISOString() };
 }
 
 function stampState(state: AppState): AppState {
@@ -206,6 +207,15 @@ function formatSigned(value: number, digits = 0): string {
 
 function isOnce(source: Pick<Source, 'frequency'>): boolean {
   return source.frequency === 'once';
+}
+
+function isAddedToday(source: Pick<Source, 'addedAt'>): boolean {
+  if (!source.addedAt) return false;
+  return startOfLocalDay(parseSourceDate(source.addedAt)) === startOfLocalDay(new Date());
+}
+
+function isOnceToday(source: Pick<Source, 'frequency' | 'addedAt'>): boolean {
+  return isOnce(source) && isAddedToday(source);
 }
 
 function sourceOccurrences(source: Source, minutes: number): number {
@@ -321,9 +331,9 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const calculations = useMemo(() => {
     const minutes = PERIOD_MINUTES[active.period];
     const recurringGains = active.gains.filter((source) => !isOnce(source));
-    const variableGains = active.gains.filter(isOnce);
+    const variableGains = active.gains.filter(isOnceToday);
     const recurringLosses = active.consumptions.filter((source) => !isOnce(source));
-    const variableLosses = active.consumptions.filter(isOnce);
+    const variableLosses = active.consumptions.filter(isOnceToday);
     const recurringGainsTotal = sumSources(recurringGains, minutes);
     const variableGainsTotal = sumSources(variableGains, minutes);
     const recurringLossesTotal = sumSources(recurringLosses, minutes);
@@ -338,11 +348,11 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     const consumptionPerMinute = consumptionTotal / minutes;
     const netPerMinute = gainsPerMinute - consumptionPerMinute;
     const dailyGains = sumSources(active.gains.filter((source) => source.frequency === 'day'), 1440);
-    const dailyVariableGains = sumSources(active.gains.filter(isOnce), 1440);
+    const dailyVariableGains = sumListed(variableGains);
     const weeklyGainsToday = listedHitTotal(active.gains, isWeeklyDueToday);
     const intervalGainsToday = listedHitTotal(active.gains, isIntervalDueToday);
     const dailyLosses = sumSources(active.consumptions.filter((source) => source.frequency === 'day'), 1440);
-    const dailyVariableLosses = sumSources(active.consumptions.filter(isOnce), 1440);
+    const dailyVariableLosses = sumListed(variableLosses);
     const weeklyLossesToday = listedHitTotal(active.consumptions, isWeeklyDueToday);
     const intervalLossesToday = listedHitTotal(active.consumptions, isIntervalDueToday);
     const realDayGains = dailyGains + dailyVariableGains + weeklyGainsToday + intervalGainsToday;
@@ -613,9 +623,9 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             </div>
             <div className="hero-bottom">
               <span className="pill">ganhos recorrentes <strong>{formatNumber(calculations.recurringGainsListed)}</strong></span>
-              <span className="pill">ganhos 1x <strong>{formatNumber(calculations.variableGainsListed)}</strong></span>
+              <span className="pill">ganhos 1x hoje <strong>{formatNumber(calculations.variableGainsListed)}</strong></span>
               <span className="pill">perdas recorrentes <strong>{formatNumber(calculations.recurringLossesListed)}</strong></span>
-              <span className="pill">perdas 1x <strong>{formatNumber(calculations.variableLossesListed)}</strong></span>
+              <span className="pill">perdas 1x hoje <strong>{formatNumber(calculations.variableLossesListed)}</strong></span>
               <span className="pill">duração <strong>{formatDuration(calculations.depletionMinutes)}</strong></span>
             </div>
           </section>
@@ -660,8 +670,11 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
 
           <section className="section reveal delay-2" aria-labelledby="sources-title">
             <div className="section-heading">
-              <div><div className="eyebrow">Cadência</div><h2 id="sources-title">Entradas e saídas</h2><p>Separe o que se repete do que acontece uma vez.</p></div>
-              <span className="eyebrow">{active.gains.length + active.consumptions.length} fontes ativas</span>
+              <div><div className="eyebrow">Cadência</div><h2 id="sources-title">Entradas e saídas</h2><p>Separe o que se repete do que acontece uma vez. Ganhos e gastos variáveis só aparecem no dia em que foram lançados.</p></div>
+              <span className="eyebrow">{
+                active.gains.filter((source) => !isOnce(source) || isOnceToday(source)).length
+                + active.consumptions.filter((source) => !isOnce(source) || isOnceToday(source)).length
+              } fontes ativas</span>
             </div>
             <div className="source-columns">
               <SourcePanel
@@ -676,7 +689,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <SourcePanel
                 kind="gain"
                 cadence="once"
-                sources={active.gains.filter(isOnce)}
+                sources={active.gains.filter(isOnceToday)}
                 total={calculations.variableGainsListed}
                 onAdd={() => openSourceEditor('gain', 'once')}
                 onEdit={(source) => openSourceEditor('gain', 'once', source)}
@@ -694,7 +707,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <SourcePanel
                 kind="consume"
                 cadence="once"
-                sources={active.consumptions.filter(isOnce)}
+                sources={active.consumptions.filter(isOnceToday)}
                 total={calculations.variableLossesListed}
                 onAdd={() => openSourceEditor('consume', 'once')}
                 onEdit={(source) => openSourceEditor('consume', 'once', source)}
@@ -708,14 +721,14 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <div>
                 <div className="eyebrow">Hoje</div>
                 <h2 id="day-real-title">Resultado real do dia</h2>
-                <p>Recorrente diário, variáveis (1x), semanal no dia em que cai e recorrência maior (ex.: a cada 15 dias) no dia em que cai.</p>
+                <p>Recorrente diário, variáveis lançadas hoje, semanal no dia em que cai e recorrência maior (ex.: a cada 15 dias) no dia em que cai.</p>
               </div>
             </div>
             <div className="day-real-grid">
               <div className="card pad day-real-card">
                 <div className="eyebrow">Ganhos do dia</div>
                 <div className="day-real-row"><span>Recorrente diário</span><strong className="gain-text">+{formatNumber(calculations.dailyGains)}</strong></div>
-                <div className="day-real-row"><span>Variáveis (1x)</span><strong className="gain-text">+{formatNumber(calculations.dailyVariableGains)}</strong></div>
+                <div className="day-real-row"><span>Variáveis (hoje)</span><strong className="gain-text">+{formatNumber(calculations.dailyVariableGains)}</strong></div>
                 <div className="day-real-row"><span>Semanal (hoje)</span><strong className="gain-text">+{formatNumber(calculations.weeklyGainsToday)}</strong></div>
                 <div className="day-real-row"><span>A cada N dias (hoje)</span><strong className="gain-text">+{formatNumber(calculations.intervalGainsToday)}</strong></div>
                 <div className="day-real-row total"><span>Total ganho</span><strong className="gain-text">+{formatNumber(calculations.realDayGains)}</strong></div>
@@ -723,7 +736,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <div className="card pad day-real-card consume">
                 <div className="eyebrow">Gastos do dia</div>
                 <div className="day-real-row"><span>Recorrente diário</span><strong className="loss-text">−{formatNumber(calculations.dailyLosses)}</strong></div>
-                <div className="day-real-row"><span>Variáveis (1x)</span><strong className="loss-text">−{formatNumber(calculations.dailyVariableLosses)}</strong></div>
+                <div className="day-real-row"><span>Variáveis (hoje)</span><strong className="loss-text">−{formatNumber(calculations.dailyVariableLosses)}</strong></div>
                 <div className="day-real-row"><span>Semanal (hoje)</span><strong className="loss-text">−{formatNumber(calculations.weeklyLossesToday)}</strong></div>
                 <div className="day-real-row"><span>A cada N dias (hoje)</span><strong className="loss-text">−{formatNumber(calculations.intervalLossesToday)}</strong></div>
                 <div className="day-real-row total"><span>Total gasto</span><strong className="loss-text">−{formatNumber(calculations.realDayLosses)}</strong></div>
@@ -801,7 +814,14 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <table>
                 <thead><tr><th>Fonte</th><th>Tipo</th><th>Cadência</th><th>Ocorrências</th><th>Total / período</th><th>Média / min</th></tr></thead>
                 <tbody>
-                  {[...active.gains.map((source) => ({ ...source, kind: 'gain' as SourceKind })), ...active.consumptions.map((source) => ({ ...source, kind: 'consume' as SourceKind }))].map((source) => (
+                  {[
+                    ...active.gains
+                      .filter((source) => !isOnce(source) || isOnceToday(source))
+                      .map((source) => ({ ...source, kind: 'gain' as SourceKind })),
+                    ...active.consumptions
+                      .filter((source) => !isOnce(source) || isOnceToday(source))
+                      .map((source) => ({ ...source, kind: 'consume' as SourceKind })),
+                  ].map((source) => (
                     <tr key={`detail-${source.id}`} data-testid={`row-detail-${source.id}`}>
                       <td><strong>{source.name}</strong></td>
                       <td><span className={`kind-badge ${source.kind}`}>{source.kind === 'gain' ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}{source.kind === 'gain' ? 'ganho' : 'perda'} {isOnce(source) ? 'variável' : 'recorrente'}</span></td>
@@ -813,7 +833,9 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                   ))}
                 </tbody>
               </table>
-              {active.gains.length + active.consumptions.length === 0 && <div className="empty-source">Adicione uma entrada ou saída acima para começar a leitura.</div>}
+              {active.gains.filter((source) => !isOnce(source) || isOnceToday(source)).length
+                + active.consumptions.filter((source) => !isOnce(source) || isOnceToday(source)).length === 0
+                && <div className="empty-source">Adicione uma entrada ou saída acima para começar a leitura.</div>}
             </div>
           </section>
           <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Resource Balance sincroniza os cenários com o Supabase e mantém uma cópia local neste dispositivo.</footer>
@@ -838,7 +860,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                 <div><label htmlFor="source-occurrences">Ocorrências</label><input id="source-occurrences" type="number" min="1" max="9999" step="1" value={draft.occurrences} onChange={(event) => setDraft({ ...draft, occurrences: sanitizeInt(event.target.value, 1, 9_999, 1) })} data-testid="input-source-occurrences" /></div>
               </div>
               {draft.cadence === 'once' ? (
-                <p className="field-help">Esta fonte entra uma vez no cenário, sem se repetir no período.</p>
+                <p className="field-help">Entra só no resultado do dia em que for lançada. Amanhã este item some da lista.</p>
               ) : (
                 <>
                   <div><label htmlFor="source-frequency">Frequência</label><select id="source-frequency" value={draft.frequency === 'once' ? 'day' : draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value as Frequency, intervalDays: draft.intervalDays ?? 15 })} data-testid="select-source-frequency">{RECURRING_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{FREQUENCY_LABELS[frequency]}</option>)}</select></div>
@@ -884,8 +906,8 @@ function SourcePanel({
     ? (isVariable ? 'Ganhos variáveis (1x)' : 'Ganhos recorrentes')
     : (isVariable ? 'Perdas variáveis (1x)' : 'Perdas recorrentes');
   const empty = isGain
-    ? (isVariable ? 'Nenhum ganho variável.' : 'Nenhum ganho recorrente.')
-    : (isVariable ? 'Nenhuma perda variável.' : 'Nenhuma perda recorrente.');
+    ? (isVariable ? 'Nenhum ganho variável hoje.' : 'Nenhum ganho recorrente.')
+    : (isVariable ? 'Nenhuma perda variável hoje.' : 'Nenhuma perda recorrente.');
   return (
     <div className={`card source-panel ${isGain ? '' : 'consume'}`} data-testid={`panel-sources-${kind}-${cadence}`}>
       <div className="source-head">

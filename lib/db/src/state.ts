@@ -1,4 +1,4 @@
-import { eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "./client";
 import { createEmptyScenario, type AppState, type Scenario, type Source } from "./defaults";
 import { appSettings, scenarios, sources, userSettings } from "./schema";
@@ -174,13 +174,4 @@ async function writeAppState(userId: string, state: AppState): Promise<void> {
         },
       });
   });
-}
-
-export async function enableRowLevelSecurity(): Promise<void> {
-  await db.execute(sql`alter table resource_balance.scenarios enable row level security`);
-  await db.execute(sql`alter table resource_balance.sources enable row level security`);
-  await db.execute(sql`alter table resource_balance.app_settings enable row level security`);
-  await db.execute(sql`alter table resource_balance.app_users enable row level security`);
-  await db.execute(sql`alter table resource_balance.app_sessions enable row level security`);
-  await db.execute(sql`alter table resource_balance.user_settings enable row level security`);
 }

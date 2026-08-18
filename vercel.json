@@ -4,10 +4,13 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm run build:vercel",
   "outputDirectory": "artifacts/resource-balance/dist/public",
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
   "functions": {
-    "api/[[...path]].ts": {
+    "api/[[...path]].mjs": {
       "maxDuration": 10,
-      "includeFiles": "{artifacts/api-server/src/**,lib/**}"
+      "includeFiles": "artifacts/api-server/dist/**"
     }
   }
 }

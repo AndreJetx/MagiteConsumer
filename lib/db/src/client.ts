@@ -11,10 +11,15 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+const isServerless = Boolean(process.env.VERCEL);
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: process.env.VERCEL ? 1 : 10,
+  max: isServerless ? 1 : 10,
+  idleTimeoutMillis: isServerless ? 5_000 : 30_000,
+  connectionTimeoutMillis: 10_000,
+  allowExitOnIdle: isServerless,
 });
 
 export const db = drizzle(pool, { schema });

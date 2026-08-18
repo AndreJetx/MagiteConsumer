@@ -60,7 +60,7 @@ router.post("/auth/logout", async (req, res) => {
   const bearer = header?.startsWith("Bearer ") ? header.slice(7).trim() : undefined;
   const token = bearer || (req.cookies?.[SESSION_COOKIE] as string | undefined);
   if (token) await deleteSession(token);
-  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
   res.json({ ok: true });
 });
 

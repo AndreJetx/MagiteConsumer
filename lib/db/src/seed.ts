@@ -1,9 +1,11 @@
 import { pool } from "./client";
-import { enableRowLevelSecurity } from "./state";
+import { rlsStatements } from "./rls";
 
 async function seed() {
-  await enableRowLevelSecurity();
-  console.log("Seed não apaga cenários. Crie a conta pela tela de login.");
+  for (const statement of rlsStatements()) {
+    await pool.query(statement);
+  }
+  console.log("RLS ativo. Seed não apaga cenários. Crie a conta pela tela de login.");
   await pool.end();
 }
 
