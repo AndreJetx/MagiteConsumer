@@ -93,10 +93,22 @@ const statements = [
   `create index if not exists sources_scenario_id_idx on ${schema}.sources (scenario_id)`,
   `create table if not exists ${schema}.app_users (
     id text primary key,
-    email text not null unique,
+    username text not null unique,
     password_hash text not null,
     created_at timestamptz not null default now()
   )`,
+  `do $$ begin
+    if exists (
+      select 1 from information_schema.columns
+      where table_schema = '${schema}' and table_name = 'app_users' and column_name = 'email'
+    ) and not exists (
+      select 1 from information_schema.columns
+      where table_schema = '${schema}' and table_name = 'app_users' and column_name = 'username'
+    ) then
+      alter table ${schema}.app_users rename column email to username;
+    end if;
+  end $$`,
+  `update ${schema}.app_users set username = lower(username) where username <> lower(username)`,
   `create table if not exists ${schema}.app_sessions (
     token text primary key,
     user_id text not null references ${schema}.app_users(id) on delete cascade,

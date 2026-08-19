@@ -8,9 +8,9 @@ const router: IRouter = Router();
 router.use(requireAuth);
 
 router.get("/state", async (req, res) => {
-  const { id, email } = (req as AuthedRequest).user;
+  const { id, username } = (req as AuthedRequest).user;
   try {
-    const state = await getAppState(id, email);
+    const state = await getAppState(id, username);
     res.json(state);
   } catch (error) {
     logger.error({ err: error }, "Failed to load app state");
@@ -26,12 +26,12 @@ router.put("/state", async (req, res) => {
   }
 
   try {
-    const { id, email } = (req as AuthedRequest).user;
+    const { id, username } = (req as AuthedRequest).user;
     await saveAppState(id, parsed.data);
     logger.info(
       {
         userId: id,
-        email,
+        username,
         scenarioCount: parsed.data.scenarios.length,
         sourceCount: parsed.data.scenarios.reduce(
           (total, scenario) => total + scenario.gains.length + scenario.consumptions.length,

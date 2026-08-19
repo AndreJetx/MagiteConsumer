@@ -39,9 +39,9 @@ function toScenario(
   };
 }
 
-async function claimUnownedScenarios(userId: string, email: string): Promise<void> {
-  const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
-  if (ownerEmail && email !== ownerEmail) return;
+async function claimUnownedScenarios(userId: string, username: string): Promise<void> {
+  const ownerName = (process.env.OWNER_USERNAME ?? process.env.OWNER_EMAIL)?.trim().toLowerCase();
+  if (ownerName && username !== ownerName) return;
 
   const unowned = await db
     .select({ id: scenarios.id })
@@ -50,7 +50,7 @@ async function claimUnownedScenarios(userId: string, email: string): Promise<voi
     .limit(1);
   if (unowned.length === 0) return;
 
-  if (!ownerEmail) {
+  if (!ownerName) {
     const [owned] = await db
       .select({ id: scenarios.id })
       .from(scenarios)
@@ -69,8 +69,8 @@ async function claimUnownedScenarios(userId: string, email: string): Promise<voi
   }
 }
 
-export async function getAppState(userId: string, email: string): Promise<AppState> {
-  await claimUnownedScenarios(userId, email);
+export async function getAppState(userId: string, username: string): Promise<AppState> {
+  await claimUnownedScenarios(userId, username);
 
   const rows = await db.query.scenarios.findMany({
     where: eq(scenarios.userId, userId),

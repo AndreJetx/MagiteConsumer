@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Check,
   Clock3,
   Copy,
-  Download,
   Edit3,
   Layers3,
   LogOut,
@@ -16,7 +15,7 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
-  Upload,
+  UserX,
   X,
   RotateCcw,
 } from 'lucide-react';
@@ -35,10 +34,10 @@ import NotFound from '@/pages/not-found';
 import { LoginScreen, LoginBackdrop } from '@/pages/login';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useLocale } from '@/hooks/use-locale';
-import { AuthError, fetchAppState, fetchCurrentUser, logout, persistAppState, type AuthUser } from '@/lib/api';
-import { localeTag, t as tx } from '@/lib/i18n';
-import { readCachedState, writeCachedState } from '@/lib/storage';
-import { cleanInput, sanitizeImportedState, sanitizeInt, sanitizeText } from '@/lib/sanitize';
+import { AuthError, deleteAccount, fetchAppState, fetchCurrentUser, logout, persistAppState, type AuthUser } from '@/lib/api';
+import { localeTag, t as tx, translateApiError } from '@/lib/i18n';
+import { clearCachedState, readCachedState, writeCachedState } from '@/lib/storage';
+import { cleanInput, sanitizeInt, sanitizeText } from '@/lib/sanitize';
 import type { AppState, Frequency, Period, Scenario, Source, SourceKind } from '@/lib/types';
 
 interface SourceDraft extends Omit<Source, 'id'> {
@@ -258,11 +257,13 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const { t, locale } = useLocale();
   const [state, setState] = useState<AppState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'loading' | 'cloud' | 'local'>('loading');
   const [draft, setDraft] = useState<SourceDraft | null>(null);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletePhrase, setDeletePhrase] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [horizonKey, setHorizonKey] = useState<(typeof HORIZONS)[number]['key']>('7d');
   const skipPersistRef = useRef(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const activeScenario = state.scenarios.find((scenario) => scenario.id === state.activeId);
   const active = activeScenario ?? state.scenarios[0] ?? defaultScenario;
 
@@ -280,11 +281,9 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           setState(next);
           writeCachedState(JSON.stringify(next), user.id);
         }
-        setSyncStatus('cloud');
-      } catch (error) {
+      } catch {
         if (cancelled) return;
         if (cached.scenarios.length) setState(cached);
-        setSyncStatus('local');
       }
       if (!cancelled) setHydrated(true);
     })();
@@ -302,13 +301,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     }
     const timer = window.setTimeout(() => {
       persistAppState(state, user.token)
-        .then(() => setSyncStatus('cloud'))
         .catch((error) => {
           if (error instanceof AuthError) {
             onLogout();
-            return;
           }
-          setSyncStatus('local');
         });
     }, 450);
     return () => window.clearTimeout(timer);
@@ -492,29 +488,6 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     });
   };
 
-  const exportState = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = t('scenario.exportFile');
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importState = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      const imported = sanitizeImportedState(JSON.parse(await file.text()));
-      if (!imported) throw new Error('invalid');
-      setState(imported);
-    } catch {
-      window.alert(t('scenario.importError'));
-    }
-  };
-
   const resetScenario = () => {
     if (!window.confirm(t('scenario.resetConfirm'))) return;
     setState((previous) => ({
@@ -523,6 +496,34 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         ? { ...createBlankScenario(scenario.name), id: scenario.id }
         : scenario),
     }));
+  };
+
+  const expectedDeletePhrase = t('account.phrase');
+  const phraseMatches = deletePhrase.trim().toLowerCase().replace(/\s+/g, ' ') === expectedDeletePhrase;
+
+  const openDeleteAccount = () => {
+    setDeletePhrase('');
+    setDeleteError('');
+    setDeleteBusy(false);
+    setDeleteAccountOpen(true);
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!phraseMatches || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError('');
+    try {
+      await deleteAccount(expectedDeletePhrase, user.token);
+      clearCachedState(user.id);
+      onLogout();
+    } catch (error) {
+      setDeleteBusy(false);
+      if (error instanceof AuthError) {
+        onLogout();
+        return;
+      }
+      setDeleteError(error instanceof Error ? translateApiError(error.message) : t('errors.deleteFailed'));
+    }
   };
 
   return (
@@ -539,25 +540,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         </div>
         <div className="topbar-actions">
           <LanguageSwitcher />
-          <div className="save-note" data-testid="status-local-saved">
-            <span className="save-dot" />
-            {syncStatus === 'cloud'
-              ? t('sync.cloud')
-              : syncStatus === 'loading'
-                ? t('sync.loading')
-                : t('sync.local')}
-          </div>
-          <span className="save-note user-email" title={user.email}>{user.email}</span>
+          <span className="save-note user-email" title={user.username}>{user.username}</span>
           <button className="button" onClick={onLogout} data-testid="button-logout" aria-label={t('actions.logout')}>
             <LogOut size={16} /><span>{t('actions.logout')}</span>
           </button>
-          <button className="button" onClick={exportState} data-testid="button-export-json" aria-label={t('actions.export')}>
-            <Download size={16} /><span>{t('actions.export')}</span>
-          </button>
-          <button className="icon-button" onClick={() => fileInputRef.current?.click()} data-testid="button-import-json" aria-label={t('actions.import')}>
-            <Upload size={16} />
-          </button>
-          <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={importState} className="sr-only" data-testid="input-import-json" />
         </div>
       </header>
 
@@ -597,6 +583,9 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               <button className="button small" onClick={resetScenario} data-testid="button-reset-example"><RotateCcw size={13} /> {t('actions.reset')}</button>
             <button className="button small danger" onClick={deleteScenario} data-testid="button-delete-scenario"><Trash2 size={13} /> {t('actions.delete')}</button>
           </div>
+          <button className="button small danger account-delete" onClick={openDeleteAccount} data-testid="button-delete-account">
+            <UserX size={13} /> {t('actions.deleteAccount')}
+          </button>
         </aside>
 
         <main className="main-content">
@@ -834,7 +823,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                 && <div className="empty-source">{t('table.empty')}</div>}
             </div>
           </section>
-          <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t('footer')}</footer>
+          <footer className="footer">
+            <p><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t('footer')}</p>
+            <p className="gold-disclaimer">{t('disclaimer')}</p>
+          </footer>
         </main>
       </div>
 
@@ -871,6 +863,46 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               )}
               {(!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1) && <p className="form-error">{t('modal.formError')}</p>}
               <div className="source-form-actions"><button className="button" onClick={() => setDraft(null)} data-testid="button-cancel-source">{t('actions.cancel')}</button><button className="button primary" onClick={saveSource} disabled={!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1} data-testid="button-save-source"><Save size={15} /> {t('actions.saveSource')}</button></div>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteAccountOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteBusy) setDeleteAccountOpen(false); }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="delete-account-title">
+            <div className="modal-head">
+              <div>
+                <h2 id="delete-account-title" className="modal-title">{t('account.title')}</h2>
+                <p className="modal-subtitle">{t('account.subtitle')}</p>
+              </div>
+              <button className="icon-button" onClick={() => { if (!deleteBusy) setDeleteAccountOpen(false); }} aria-label={t('actions.closeEditor')} data-testid="button-close-delete-account"><X size={17} /></button>
+            </div>
+            <div className="source-form">
+              <p className="field-help">{t('account.instruction')}</p>
+              <p className="confirm-phrase">{expectedDeletePhrase}</p>
+              <div>
+                <label htmlFor="delete-account-phrase">{t('account.placeholder')}</label>
+                <input
+                  id="delete-account-phrase"
+                  autoFocus
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={deletePhrase}
+                  onChange={(event) => setDeletePhrase(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void confirmDeleteAccount(); } }}
+                  placeholder={expectedDeletePhrase}
+                  data-testid="input-delete-account-phrase"
+                />
+              </div>
+              {deletePhrase.trim() && !phraseMatches && <p className="form-error">{t('account.mismatch')}</p>}
+              {deleteError && <p className="form-error">{deleteError}</p>}
+              <div className="source-form-actions">
+                <button className="button" onClick={() => setDeleteAccountOpen(false)} disabled={deleteBusy} data-testid="button-cancel-delete-account">{t('actions.cancel')}</button>
+                <button className="button danger solid" onClick={() => void confirmDeleteAccount()} disabled={!phraseMatches || deleteBusy} data-testid="button-confirm-delete-account">
+                  <UserX size={15} /> {deleteBusy ? t('login.wait') : t('account.confirm')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

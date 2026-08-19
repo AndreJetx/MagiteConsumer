@@ -5,6 +5,8 @@ export { getAppState, saveAppState } from "./state";
 export {
   parseAppState,
   credentialsSchema,
+  loginCredentialsSchema,
+  deleteAccountSchema,
   sanitizeText,
 } from "./validation";
 export {
@@ -13,5 +15,6 @@ export {
   createSession,
   getUserBySession,
   deleteSession,
+  deleteUserAccount,
   type AuthUser,
 } from "./auth";

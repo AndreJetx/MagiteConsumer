@@ -2,18 +2,18 @@ import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "./client";
-import { appSessions, appUsers } from "./schema";
+import { appSessions, appUsers, scenarios } from "./schema";
 
 const scryptAsync = promisify(scrypt);
 const SESSION_DAYS = 30;
 
 export interface AuthUser {
   id: string;
-  email: string;
+  username: string;
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+export function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
 }
 
 function makeId(prefix: string): string {
@@ -35,36 +35,47 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   return timingSafeEqual(derived, actual);
 }
 
-export async function registerUser(email: string, password: string): Promise<AuthUser> {
-  const normalized = normalizeEmail(email);
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+}
+
+export async function registerUser(username: string, password: string): Promise<AuthUser> {
+  const normalized = normalizeUsername(username);
   const [existing] = await db
     .select({ id: appUsers.id })
     .from(appUsers)
-    .where(eq(appUsers.email, normalized))
+    .where(eq(appUsers.username, normalized))
     .limit(1);
   if (existing) {
-    throw Object.assign(new Error("EMAIL_TAKEN"), { code: "EMAIL_TAKEN" });
+    throw Object.assign(new Error("USERNAME_TAKEN"), { code: "USERNAME_TAKEN" });
   }
 
   const user: AuthUser = {
     id: makeId("user"),
-    email: normalized,
+    username: normalized,
   };
-  await db.insert(appUsers).values({
-    id: user.id,
-    email: user.email,
-    passwordHash: await hashPassword(password),
-  });
+  try {
+    await db.insert(appUsers).values({
+      id: user.id,
+      username: user.username,
+      passwordHash: await hashPassword(password),
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw Object.assign(new Error("USERNAME_TAKEN"), { code: "USERNAME_TAKEN" });
+    }
+    throw error;
+  }
   return user;
 }
 
-export async function loginUser(email: string, password: string): Promise<AuthUser | null> {
-  const normalized = normalizeEmail(email);
-  const [row] = await db.select().from(appUsers).where(eq(appUsers.email, normalized)).limit(1);
+export async function loginUser(username: string, password: string): Promise<AuthUser | null> {
+  const normalized = normalizeUsername(username);
+  const [row] = await db.select().from(appUsers).where(eq(appUsers.username, normalized)).limit(1);
   if (!row) return null;
   const ok = await verifyPassword(password, row.passwordHash);
   if (!ok) return null;
-  return { id: row.id, email: row.email };
+  return { id: row.id, username: row.username };
 }
 
 export async function createSession(userId: string): Promise<string> {
@@ -79,7 +90,7 @@ export async function getUserBySession(token: string): Promise<AuthUser | null> 
   const [row] = await db
     .select({
       id: appUsers.id,
-      email: appUsers.email,
+      username: appUsers.username,
       expiresAt: appSessions.expiresAt,
     })
     .from(appSessions)
@@ -91,10 +102,18 @@ export async function getUserBySession(token: string): Promise<AuthUser | null> 
     await db.delete(appSessions).where(eq(appSessions.token, token));
     return null;
   }
-  return { id: row.id, email: row.email };
+  return { id: row.id, username: row.username };
 }
 
 export async function deleteSession(token: string): Promise<void> {
   if (!token) return;
   await db.delete(appSessions).where(eq(appSessions.token, token));
+}
+
+export async function deleteUserAccount(userId: string): Promise<void> {
+  if (!userId) return;
+  await db.transaction(async (tx) => {
+    await tx.delete(scenarios).where(eq(scenarios.userId, userId));
+    await tx.delete(appUsers).where(eq(appUsers.id, userId));
+  });
 }

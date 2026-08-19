@@ -49,3 +49,16 @@ export function writeCachedState(value: string, userId?: string): void {
     // Preview iframes and locked-down browsers can deny storage.
   }
 }
+
+export function clearCachedState(userId?: string): void {
+  const storage = readStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(keyFor(userId));
+    if (!userId) {
+      for (const key of LEGACY_STORAGE_KEYS) storage.removeItem(key);
+    }
+  } catch {
+    // Preview iframes and locked-down browsers can deny storage.
+  }
+}

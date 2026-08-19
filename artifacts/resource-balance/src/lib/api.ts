@@ -12,11 +12,11 @@ export class AuthError extends Error {
 
 export interface AuthUser {
   id: string;
-  email: string;
+  username: string;
   token: string;
 }
 
-type AuthResponse = { id: string; email: string; token: string };
+type AuthResponse = { id: string; username?: string; email?: string; token: string };
 
 let memoryToken: string | null = null;
 
@@ -74,7 +74,11 @@ async function saveSession(response: Response): Promise<AuthUser> {
     throw new Error('Resposta de login inválida.');
   }
   setAuthToken(body.token);
-  return { id: body.id, email: body.email, token: body.token };
+  const username = body.username || body.email;
+  if (!username) {
+    throw new Error('Resposta de login inválida.');
+  }
+  return { id: body.id, username, token: body.token };
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
@@ -83,31 +87,33 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   try {
     const response = await apiFetch('/auth/me', undefined, token);
     if (!response.ok) return null;
-    const user = (await response.json()) as { id: string; email: string };
-    return { ...user, token };
+    const user = (await response.json()) as { id: string; username?: string; email?: string };
+    const username = user.username || user.email;
+    if (!username) return null;
+    return { id: user.id, username, token };
   } catch (error) {
     if (error instanceof AuthError) return null;
     throw error;
   }
 }
 
-export async function login(email: string, password: string): Promise<AuthUser> {
+export async function login(username: string, password: string): Promise<AuthUser> {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
   if (!response.ok) throw new Error(await readError(response, 'Não foi possível entrar.'));
   return saveSession(response);
 }
 
-export async function register(email: string, password: string): Promise<AuthUser> {
+export async function register(username: string, password: string): Promise<AuthUser> {
   const response = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
   if (!response.ok) throw new Error(await readError(response, 'Não foi possível criar a conta.'));
   return saveSession(response);
@@ -124,6 +130,15 @@ export async function logout(): Promise<void> {
   } finally {
     setAuthToken(null);
   }
+}
+
+export async function deleteAccount(confirmation: string, token?: string): Promise<void> {
+  const response = await apiFetch('/auth/account/delete', {
+    method: 'POST',
+    body: JSON.stringify({ confirmation }),
+  }, token);
+  if (!response.ok) throw new Error(await readError(response, 'Não foi possível excluir a conta.'));
+  setAuthToken(null);
 }
 
 export async function fetchAppState(token?: string): Promise<AppState> {

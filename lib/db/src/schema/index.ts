@@ -81,7 +81,7 @@ export const appSettings = resourceBalance.table("app_settings", {
 
 export const appUsers = resourceBalance.table("app_users", {
   id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
+  username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

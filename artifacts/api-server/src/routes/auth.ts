@@ -2,7 +2,10 @@ import { Router, type IRouter } from "express";
 import {
   createSession,
   credentialsSchema,
+  deleteAccountSchema,
+  loginCredentialsSchema,
   deleteSession,
+  deleteUserAccount,
   loginUser,
   registerUser,
 } from "@workspace/db";
@@ -19,13 +22,13 @@ router.post("/auth/register", async (req, res) => {
   }
 
   try {
-    const user = await registerUser(parsed.data.email, parsed.data.password);
+    const user = await registerUser(parsed.data.username, parsed.data.password);
     const token = await createSession(user.id);
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
     res.status(201).json({ ...user, token });
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "EMAIL_TAKEN") {
-      res.status(409).json({ error: "Este e-mail já tem uma conta." });
+    if (error instanceof Error && "code" in error && error.code === "USERNAME_TAKEN") {
+      res.status(409).json({ error: "Este nome de usuário já está em uso." });
       return;
     }
     logger.error({ err: error }, "Failed to register user");
@@ -34,16 +37,16 @@ router.post("/auth/register", async (req, res) => {
 });
 
 router.post("/auth/login", async (req, res) => {
-  const parsed = credentialsSchema.safeParse(req.body);
+  const parsed = loginCredentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." });
     return;
   }
 
   try {
-    const user = await loginUser(parsed.data.email, parsed.data.password);
+    const user = await loginUser(parsed.data.username, parsed.data.password);
     if (!user) {
-      res.status(401).json({ error: "E-mail ou senha incorretos." });
+      res.status(401).json({ error: "Nome de usuário ou senha incorretos." });
       return;
     }
     const token = await createSession(user.id);
@@ -66,6 +69,24 @@ router.post("/auth/logout", async (req, res) => {
 
 router.get("/auth/me", requireAuth, (req, res) => {
   res.json((req as AuthedRequest).user);
+});
+
+router.post("/auth/account/delete", requireAuth, async (req, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." });
+    return;
+  }
+
+  const { id } = (req as AuthedRequest).user;
+  try {
+    await deleteUserAccount(id);
+    res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
+    res.json({ ok: true });
+  } catch (error) {
+    logger.error({ err: error, userId: id }, "Failed to delete account");
+    res.status(500).json({ error: "Não foi possível excluir a conta." });
+  }
 });
 
 export default router;

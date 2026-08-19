@@ -79,19 +79,66 @@ export const appStateSchema = z.object({
   activeId: safeId,
 });
 
-export const credentialsSchema = z.object({
-  email: z
+const passwordSchema = z
+  .string()
+  .min(6, "A senha precisa ter pelo menos 6 caracteres.")
+  .max(128, "A senha é longa demais.")
+  .refine((value) => !/[\u0000-\u001F]/.test(value), "Senha inválida.");
+
+const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "O nome de usuário precisa ter pelo menos 3 caracteres.")
+  .max(32, "O nome de usuário é longo demais.")
+  .regex(/^[a-z0-9._-]+$/, "Use letras, números, ponto, hífen ou underline.")
+  .refine((value) => !value.includes("\0"), "Nome de usuário inválido.");
+
+const loginIdentitySchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3, "O nome de usuário precisa ter pelo menos 3 caracteres.")
+  .max(254, "O nome de usuário é longo demais.")
+  .refine((value) => !value.includes("\0"), "Nome de usuário inválido.");
+
+function withUsernameAlias<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value) => {
+    if (!value || typeof value !== "object") return value;
+    const body = value as Record<string, unknown>;
+    if (typeof body.username !== "string" && typeof body.email === "string") {
+      return { ...body, username: body.email };
+    }
+    return body;
+  }, schema);
+}
+
+export const credentialsSchema = withUsernameAlias(z.object({
+  username: usernameSchema,
+  password: passwordSchema,
+}));
+
+export const loginCredentialsSchema = withUsernameAlias(z.object({
+  username: loginIdentitySchema,
+  password: passwordSchema,
+}));
+
+export const ACCOUNT_DELETE_PHRASES = ["deletar minha conta", "delete my account"] as const;
+
+export function normalizeDeletePhrase(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function isAccountDeletePhrase(value: string): boolean {
+  return (ACCOUNT_DELETE_PHRASES as readonly string[]).includes(normalizeDeletePhrase(value));
+}
+
+export const deleteAccountSchema = z.object({
+  confirmation: z
     .string()
     .trim()
-    .toLowerCase()
-    .max(254)
-    .email("Informe um e-mail válido.")
-    .refine((value) => !value.includes("\0"), "E-mail inválido."),
-  password: z
-    .string()
-    .min(6, "A senha precisa ter pelo menos 6 caracteres.")
-    .max(128, "A senha é longa demais.")
-    .refine((value) => !/[\u0000-\u001F]/.test(value), "Senha inválida."),
+    .min(1, "Digite a frase de confirmação.")
+    .refine(isAccountDeletePhrase, "A frase de confirmação não confere."),
 });
 
 export function parseAppState(input: unknown): {
