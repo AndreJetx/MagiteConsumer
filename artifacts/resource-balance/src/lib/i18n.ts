@@ -270,7 +270,7 @@ export type Messages = typeof pt;
 
 const en: Messages = {
   brand: {
-    name: 'Magites Opressoras',
+    name: 'Magites Oppressors',
     subtitle: 'Get rich or die trying',
     loginSubtitle: 'sign in to see your scenarios',
   },
@@ -475,10 +475,10 @@ const en: Messages = {
     deleteConfirm: 'Delete the scenario “{name}”? This cannot be undone.',
     removeSource: 'Remove this source from the scenario?',
     resetConfirm: 'Clear this scenario? Gains, consumption, and balance go back to zero.',
-    importError: 'Could not import this file. Make sure it is a Magites Opressoras JSON.',
+    importError: 'Could not import this file. Make sure it is a Magites Oppressors JSON.',
     exportFile: 'magites-opressoras-scenarios.json',
   },
-  footer: 'Magites Opressoras syncs scenarios with Supabase and keeps a local copy on this device.',
+  footer: 'Magites Oppressors syncs scenarios with Supabase and keeps a local copy on this device.',
   disclaimer: 'Site developed by “AndreJetx - O Free”, for players. No official sources are involved — Legends Of Elements',
   login: {
     loading: 'Loading your session...',
@@ -562,8 +562,9 @@ function detectLocale(): Locale {
 function applyDocument(locale: Locale): void {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = locale === 'en' ? 'en' : 'pt-BR';
+  document.title = dictionaries[locale].brand.name;
   const description = locale === 'en'
-    ? 'Magites Opressoras — planner for gains, consumption, and resource projections.'
+    ? 'Magites Oppressors — planner for gains, consumption, and resource projections.'
     : 'Magites Opressoras — planejador de ganhos, consumo e projeções de recursos.';
   document.querySelector('meta[name="description"]')?.setAttribute('content', description);
 }
