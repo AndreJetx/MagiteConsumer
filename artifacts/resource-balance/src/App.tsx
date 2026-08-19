@@ -33,7 +33,10 @@ import {
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import NotFound from '@/pages/not-found';
 import { LoginScreen, LoginBackdrop } from '@/pages/login';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { useLocale } from '@/hooks/use-locale';
 import { AuthError, fetchAppState, fetchCurrentUser, logout, persistAppState, type AuthUser } from '@/lib/api';
+import { localeTag, t as tx } from '@/lib/i18n';
 import { readCachedState, writeCachedState } from '@/lib/storage';
 import { cleanInput, sanitizeImportedState, sanitizeInt, sanitizeText } from '@/lib/sanitize';
 import type { AppState, Frequency, Period, Scenario, Source, SourceKind } from '@/lib/types';
@@ -53,15 +56,7 @@ const FREQUENCY_MINUTES: Record<Exclude<Frequency, 'once' | 'interval'>, number>
   day: 1440,
   week: 10080,
 };
-const PERIOD_LABELS: Record<Period, string> = { minute: 'Minuto', hour: 'Hora', day: 'Dia', week: 'Semana' };
-const FREQUENCY_LABELS: Record<Frequency, string> = {
-  once: 'Uma vez',
-  minute: 'Por minuto',
-  hour: 'Por hora',
-  day: 'Por dia',
-  week: 'Por semana',
-  interval: 'A cada N dias',
-};
+const PERIODS = Object.keys(PERIOD_MINUTES) as Period[];
 const HORIZONS = [
   { key: '1h', label: '1h', minutes: 60 },
   { key: '6h', label: '6h', minutes: 360 },
@@ -87,7 +82,7 @@ function createBlankScenario(name: string): Scenario {
   };
 }
 
-const defaultScenario = createBlankScenario('Cenário 1');
+const defaultScenario = createBlankScenario(tx('scenario.defaultName'));
 const defaultState: AppState = { scenarios: [defaultScenario], activeId: defaultScenario.id };
 
 function sourceCount(state: AppState): number {
@@ -170,8 +165,8 @@ function intervalDaysOf(source: Pick<Source, 'intervalDays'>): number {
 }
 
 function frequencyLabel(source: Pick<Source, 'frequency' | 'intervalDays'>): string {
-  if (source.frequency === 'interval') return `A cada ${intervalDaysOf(source)} dias`;
-  return FREQUENCY_LABELS[source.frequency];
+  if (source.frequency === 'interval') return tx('frequency.everyDays', { days: intervalDaysOf(source) });
+  return tx(`frequency.${source.frequency}`);
 }
 
 function startOfLocalDay(date: Date): number {
@@ -196,7 +191,7 @@ function loadState(userId?: string): AppState {
 }
 
 function formatNumber(value: number, digits = 0): string {
-  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: digits }).format(Math.round(value * 10 ** digits) / 10 ** digits);
+  return new Intl.NumberFormat(localeTag(), { maximumFractionDigits: digits }).format(Math.round(value * 10 ** digits) / 10 ** digits);
 }
 
 function formatSigned(value: number, digits = 0): string {
@@ -242,24 +237,25 @@ function sumListed(sources: Source[]): number {
 }
 
 function formatDuration(minutes: number): string {
-  if (!Number.isFinite(minutes)) return 'Nunca';
-  if (minutes <= 0) return 'Agora';
+  if (!Number.isFinite(minutes)) return tx('duration.never');
+  if (minutes <= 0) return tx('duration.now');
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const mins = Math.round(minutes % 60);
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${mins}min`;
-  return `${Math.max(1, mins)} min`;
+  return tx('duration.min', { mins: Math.max(1, mins) });
 }
 
 function formatChartTime(minutes: number): string {
   if (minutes < 60) return `${Math.round(minutes)}m`;
   if (minutes < 1440) return `${Math.round(minutes / 60)}h`;
   if (minutes < 10080) return `${Math.round(minutes / 1440)}d`;
-  return `${Math.round(minutes / 10080)}sem`;
+  return tx('duration.week', { weeks: Math.round(minutes / 10080) });
 }
 
 function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  const { t, locale } = useLocale();
   const [state, setState] = useState<AppState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'loading' | 'cloud' | 'local'>('loading');
@@ -414,7 +410,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         balance: Math.max(0, Math.round(active.balance + calculations.netPerMinute * minutes)),
       };
     });
-  }, [active.balance, calculations.netPerMinute, horizon.minutes]);
+  }, [active.balance, calculations.netPerMinute, horizon.minutes, locale]);
   const chartDepletion = Number.isFinite(calculations.depletionMinutes)
     && calculations.depletionMinutes > 0
     && calculations.depletionMinutes <= horizon.minutes
@@ -456,20 +452,20 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   };
 
   const deleteSource = (kind: SourceKind, sourceId: string) => {
-    if (!window.confirm('Remover esta fonte do cenário?')) return;
+    if (!window.confirm(t('scenario.removeSource'))) return;
     const key = kind === 'gain' ? 'gains' : 'consumptions';
     updateActive({ [key]: active[key].filter((source) => source.id !== sourceId) });
   };
 
   const createScenario = () => {
-    const name = sanitizeText(window.prompt('Nome do novo cenário', 'Novo cenário') ?? '');
+    const name = sanitizeText(window.prompt(t('scenario.newPrompt'), t('scenario.newName')) ?? '');
     if (!name) return;
     const scenario = createBlankScenario(name);
     setState((previous) => ({ scenarios: [...previous.scenarios, scenario], activeId: scenario.id }));
   };
 
   const renameScenario = () => {
-    const name = sanitizeText(window.prompt('Novo nome para este cenário', active.name) ?? '');
+    const name = sanitizeText(window.prompt(t('scenario.renamePrompt'), active.name) ?? '');
     if (name) updateActive({ name });
   };
 
@@ -477,7 +473,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     const copy: Scenario = {
       ...active,
       id: makeId('scenario'),
-      name: sanitizeText(`${active.name} — cópia`),
+      name: sanitizeText(t('scenario.copySuffix', { name: active.name })),
       gains: active.gains.map((source) => ({ ...source, id: makeId('gain') })),
       consumptions: active.consumptions.map((source) => ({ ...source, id: makeId('consume') })),
     };
@@ -486,10 +482,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
 
   const deleteScenario = () => {
     if (state.scenarios.length === 1) {
-      window.alert('Mantenha pelo menos um cenário para continuar.');
+      window.alert(t('scenario.keepOne'));
       return;
     }
-    if (!window.confirm(`Excluir o cenário “${active.name}”? Esta ação não pode ser desfeita.`)) return;
+    if (!window.confirm(t('scenario.deleteConfirm', { name: active.name }))) return;
     setState((previous) => {
       const scenarios = previous.scenarios.filter((scenario) => scenario.id !== previous.activeId);
       return { scenarios, activeId: scenarios[0].id };
@@ -501,7 +497,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'magites-opressoras-cenarios.json';
+    anchor.download = t('scenario.exportFile');
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -515,12 +511,12 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
       if (!imported) throw new Error('invalid');
       setState(imported);
     } catch {
-      window.alert('Não foi possível importar este arquivo. Verifique se ele é um JSON das Magites Opressoras.');
+      window.alert(t('scenario.importError'));
     }
   };
 
   const resetScenario = () => {
-    if (!window.confirm('Limpar este cenário? Ganhos, consumos e saldo voltam a zero.')) return;
+    if (!window.confirm(t('scenario.resetConfirm'))) return;
     setState((previous) => ({
       ...previous,
       scenarios: previous.scenarios.map((scenario) => scenario.id === previous.activeId
@@ -537,27 +533,28 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
             <img src="/brand-icon.png" alt="" width={38} height={38} />
           </div>
           <div>
-            <div className="brand-name">Magites Opressoras</div>
-            <div className="brand-subtitle">Fique rico ou morra tentando</div>
+            <div className="brand-name">{t('brand.name')}</div>
+            <div className="brand-subtitle">{t('brand.subtitle')}</div>
           </div>
         </div>
         <div className="topbar-actions">
+          <LanguageSwitcher />
           <div className="save-note" data-testid="status-local-saved">
             <span className="save-dot" />
             {syncStatus === 'cloud'
-              ? 'salvo no Supabase'
+              ? t('sync.cloud')
               : syncStatus === 'loading'
-                ? 'sincronizando...'
-                : 'salvo neste dispositivo'}
+                ? t('sync.loading')
+                : t('sync.local')}
           </div>
           <span className="save-note user-email" title={user.email}>{user.email}</span>
-          <button className="button" onClick={onLogout} data-testid="button-logout" aria-label="Sair">
-            <LogOut size={16} /><span>Sair</span>
+          <button className="button" onClick={onLogout} data-testid="button-logout" aria-label={t('actions.logout')}>
+            <LogOut size={16} /><span>{t('actions.logout')}</span>
           </button>
-          <button className="button" onClick={exportState} data-testid="button-export-json" aria-label="Exportar cenários em JSON">
-            <Download size={16} /><span>Exportar</span>
+          <button className="button" onClick={exportState} data-testid="button-export-json" aria-label={t('actions.export')}>
+            <Download size={16} /><span>{t('actions.export')}</span>
           </button>
-          <button className="icon-button" onClick={() => fileInputRef.current?.click()} data-testid="button-import-json" aria-label="Importar cenários em JSON">
+          <button className="icon-button" onClick={() => fileInputRef.current?.click()} data-testid="button-import-json" aria-label={t('actions.import')}>
             <Upload size={16} />
           </button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={importState} className="sr-only" data-testid="input-import-json" />
@@ -565,11 +562,11 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
       </header>
 
       <div className="workspace">
-        <aside className="rail reveal" aria-label="Gerenciador de cenários">
+        <aside className="rail reveal" aria-label={t('rail.label')}>
           <div className="rail-top">
             <div>
-              <div className="eyebrow">Seu atlas</div>
-              <div className="rail-title">Cenários</div>
+              <div className="eyebrow">{t('rail.eyebrow')}</div>
+              <div className="rail-title">{t('rail.title')}</div>
             </div>
             <Layers3 size={20} color="hsl(var(--primary))" />
           </div>
@@ -578,27 +575,27 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               className="scenario-select"
               value={active.id}
               onChange={(event) => setState((previous) => ({ ...previous, activeId: event.target.value }))}
-              aria-label="Selecionar cenário"
+              aria-label={t('rail.select')}
               data-testid="select-scenario"
             >
               {state.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}
             </select>
             <div className="rail-actions">
-              <button className="button small soft" onClick={createScenario} data-testid="button-new-scenario"><Plus size={14} /> novo</button>
-              <button className="button small" onClick={duplicateScenario} data-testid="button-duplicate-scenario"><Copy size={14} /> duplicar</button>
-              <button className="button small" onClick={renameScenario} data-testid="button-rename-scenario"><Pencil size={13} /> nome</button>
+              <button className="button small soft" onClick={createScenario} data-testid="button-new-scenario"><Plus size={14} /> {t('actions.new')}</button>
+              <button className="button small" onClick={duplicateScenario} data-testid="button-duplicate-scenario"><Copy size={14} /> {t('actions.duplicate')}</button>
+              <button className="button small" onClick={renameScenario} data-testid="button-rename-scenario"><Pencil size={13} /> {t('actions.rename')}</button>
             </div>
           </div>
           <hr className="rail-divider" />
           <p className="rail-note">
-            Ajuste o ritmo do seu jogo, sem depender de memória. O cenário ativo é salvo
-            <strong> automaticamente </strong>
-            no banco.
+            {t('rail.note')}
+            <strong>{t('rail.noteStrong')}</strong>
+            {t('rail.noteEnd')}
           </p>
-          <div className="quick-key"><span className="key-line" /> saldo vivo, calculado agora</div>
+          <div className="quick-key"><span className="key-line" /> {t('rail.live')}</div>
           <div className="rail-actions" style={{ marginTop: 18 }}>
-              <button className="button small" onClick={resetScenario} data-testid="button-reset-example"><RotateCcw size={13} /> limpar</button>
-            <button className="button small danger" onClick={deleteScenario} data-testid="button-delete-scenario"><Trash2 size={13} /> excluir</button>
+              <button className="button small" onClick={resetScenario} data-testid="button-reset-example"><RotateCcw size={13} /> {t('actions.reset')}</button>
+            <button className="button small danger" onClick={deleteScenario} data-testid="button-delete-scenario"><Trash2 size={13} /> {t('actions.delete')}</button>
           </div>
         </aside>
 
@@ -606,76 +603,74 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <section className="hero reveal" data-testid="section-summary">
             <div className="hero-top">
               <div>
-                <div className="eyebrow hero-label">Leitura do cenário · {active.name}</div>
-                <h1>{active.resourceName || 'Seu recurso'} está {calculations.netPerMinute >= 0 ? 'ganhando fôlego' : 'pedindo atenção'}.</h1>
+                <div className="eyebrow hero-label">{t('hero.reading', { name: active.name })}</div>
+                <h1>{active.resourceName || t('hero.resourceFallback')} {calculations.netPerMinute >= 0 ? t('hero.gaining') : t('hero.warning')}.</h1>
                 <p className="hero-copy">
-                  {calculations.netPerMinute >= 0
-                    ? 'O ritmo atual acumula saldo. Você pode planejar a próxima sessão com tranquilidade.'
-                    : 'O consumo supera os ganhos. Veja quando a reserva cruza o zero e escolha seu próximo movimento.'}
+                  {calculations.netPerMinute >= 0 ? t('hero.copyPositive') : t('hero.copyNegative')}
                 </p>
               </div>
               <div className="hero-metric">
-                <div className="metric-label">saldo após {PERIOD_LABELS[active.period].toLowerCase()}</div>
+                <div className="metric-label">{t('hero.balanceAfter', { period: t(`period.${active.period}`).toLowerCase() })}</div>
                 <div className={`metric-value ${calculations.finalBalance >= active.balance ? 'positive' : 'negative'}`} data-testid="value-final-balance">
                   {formatSigned(calculations.finalBalance)}
                 </div>
-                <div className="metric-label">{formatSigned(calculations.netPeriod)} no período</div>
+                <div className="metric-label">{t('hero.inPeriod', { value: formatSigned(calculations.netPeriod) })}</div>
               </div>
             </div>
             <div className="hero-bottom">
-              <span className="pill">ganhos recorrentes <strong>{formatNumber(calculations.recurringGainsListed)}</strong></span>
-              <span className="pill">ganhos 1x hoje <strong>{formatNumber(calculations.variableGainsListed)}</strong></span>
-              <span className="pill">perdas recorrentes <strong>{formatNumber(calculations.recurringLossesListed)}</strong></span>
-              <span className="pill">perdas 1x hoje <strong>{formatNumber(calculations.variableLossesListed)}</strong></span>
-              <span className="pill">duração <strong>{formatDuration(calculations.depletionMinutes)}</strong></span>
+              <span className="pill">{t('hero.recurringGains')} <strong>{formatNumber(calculations.recurringGainsListed)}</strong></span>
+              <span className="pill">{t('hero.onceGains')} <strong>{formatNumber(calculations.variableGainsListed)}</strong></span>
+              <span className="pill">{t('hero.recurringLosses')} <strong>{formatNumber(calculations.recurringLossesListed)}</strong></span>
+              <span className="pill">{t('hero.onceLosses')} <strong>{formatNumber(calculations.variableLossesListed)}</strong></span>
+              <span className="pill">{t('hero.duration')} <strong>{formatDuration(calculations.depletionMinutes)}</strong></span>
             </div>
           </section>
 
           <section className="section reveal delay-1" aria-labelledby="setup-title">
             <div className="section-heading">
-              <div><div className="eyebrow">Ponto de partida</div><h2 id="setup-title">O que você está acompanhando?</h2></div>
-              <span className="eyebrow">cenário editável</span>
+              <div><div className="eyebrow">{t('setup.eyebrow')}</div><h2 id="setup-title">{t('setup.title')}</h2></div>
+              <span className="eyebrow">{t('setup.editable')}</span>
             </div>
             <div className="setup-grid">
               <div className="card pad">
                 <div className="field-grid">
                   <div className="field">
-                    <label htmlFor="resource-name">Nome do recurso</label>
+                    <label htmlFor="resource-name">{t('setup.resourceName')}</label>
                     <input id="resource-name" maxLength={40} value={active.resourceName} onChange={(event) => updateActive({ resourceName: cleanInput(event.target.value, 40) })} data-testid="input-resource-name" />
-                    <div className="field-help">O nome aparece no resumo e nas projeções.</div>
+                    <div className="field-help">{t('setup.resourceHelp')}</div>
                   </div>
                   <div className="field">
-                    <label htmlFor="initial-balance">Saldo inicial</label>
+                    <label htmlFor="initial-balance">{t('setup.initialBalance')}</label>
                     <input id="initial-balance" type="number" min="0" max="1000000000000" step="1" value={active.balance} onChange={(event) => updateActive({ balance: sanitizeInt(event.target.value, 0, 1_000_000_000_000, 0) })} data-testid="input-initial-balance" />
-                    <div className="field-help">Unidades disponíveis agora.</div>
+                    <div className="field-help">{t('setup.initialHelp')}</div>
                   </div>
                 </div>
                 <div className="field" style={{ marginTop: 18 }}>
-                  <label>Período de leitura</label>
-                  <div className="period-wrap" role="group" aria-label="Período de leitura">
-                    {(Object.keys(PERIOD_LABELS) as Period[]).map((period) => (
+                  <label>{t('setup.period')}</label>
+                  <div className="period-wrap" role="group" aria-label={t('setup.period')}>
+                    {PERIODS.map((period) => (
                       <button key={period} className={`period-button ${active.period === period ? 'active' : ''}`} onClick={() => updateActive({ period })} data-testid={`button-period-${period}`}>
-                        {PERIOD_LABELS[period]}
+                        {t(`period.${period}`)}
                       </button>
                     ))}
                   </div>
-                  <div className="field-help">Totais de cada fonte são normalizados para este período.</div>
+                  <div className="field-help">{t('setup.periodHelp')}</div>
                 </div>
               </div>
               <div className="card pad balance-card">
-                <div><div className="eyebrow">saldo neste momento</div><div className="metric-value" data-testid="value-current-balance">{formatNumber(active.balance)}</div></div>
-                <div className="balance-foot"><Check size={14} /> base usada em todas as projeções</div>
+                <div><div className="eyebrow">{t('setup.currentBalance')}</div><div className="metric-value" data-testid="value-current-balance">{formatNumber(active.balance)}</div></div>
+                <div className="balance-foot"><Check size={14} /> {t('setup.baseNote')}</div>
               </div>
             </div>
           </section>
 
           <section className="section reveal delay-2" aria-labelledby="sources-title">
             <div className="section-heading">
-              <div><div className="eyebrow">Cadência</div><h2 id="sources-title">Entradas e saídas</h2><p>Separe o que se repete do que acontece uma vez. Ganhos e gastos variáveis só aparecem no dia em que foram lançados.</p></div>
-              <span className="eyebrow">{
-                active.gains.filter((source) => !isOnce(source) || isOnceToday(source)).length
+              <div><div className="eyebrow">{t('sources.eyebrow')}</div><h2 id="sources-title">{t('sources.title')}</h2><p>{t('sources.copy')}</p></div>
+              <span className="eyebrow">{t('sources.active', {
+                count: active.gains.filter((source) => !isOnce(source) || isOnceToday(source)).length
                 + active.consumptions.filter((source) => !isOnce(source) || isOnceToday(source)).length
-              } fontes ativas</span>
+              })}</span>
             </div>
             <div className="source-columns">
               <SourcePanel
@@ -720,46 +715,46 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
           <section className="section day-real" aria-labelledby="day-real-title">
             <div className="section-heading">
               <div>
-                <div className="eyebrow">Hoje</div>
-                <h2 id="day-real-title">Resultado real do dia</h2>
-                <p>Recorrente diário, variáveis lançadas hoje, semanal no dia em que cai e recorrência maior (ex.: a cada 15 dias) no dia em que cai.</p>
+                <div className="eyebrow">{t('day.eyebrow')}</div>
+                <h2 id="day-real-title">{t('day.title')}</h2>
+                <p>{t('day.copy')}</p>
               </div>
             </div>
             <div className="day-real-grid">
               <div className="card pad day-real-card">
-                <div className="eyebrow">Ganhos do dia</div>
-                <div className="day-real-row"><span>Recorrente diário</span><strong className="gain-text">+{formatNumber(calculations.dailyGains)}</strong></div>
-                <div className="day-real-row"><span>Variáveis (hoje)</span><strong className="gain-text">+{formatNumber(calculations.dailyVariableGains)}</strong></div>
-                <div className="day-real-row"><span>Semanal (hoje)</span><strong className="gain-text">+{formatNumber(calculations.weeklyGainsToday)}</strong></div>
-                <div className="day-real-row"><span>A cada N dias (hoje)</span><strong className="gain-text">+{formatNumber(calculations.intervalGainsToday)}</strong></div>
-                <div className="day-real-row total"><span>Total ganho</span><strong className="gain-text">+{formatNumber(calculations.realDayGains)}</strong></div>
+                <div className="eyebrow">{t('day.gains')}</div>
+                <div className="day-real-row"><span>{t('day.daily')}</span><strong className="gain-text">+{formatNumber(calculations.dailyGains)}</strong></div>
+                <div className="day-real-row"><span>{t('day.variable')}</span><strong className="gain-text">+{formatNumber(calculations.dailyVariableGains)}</strong></div>
+                <div className="day-real-row"><span>{t('day.weekly')}</span><strong className="gain-text">+{formatNumber(calculations.weeklyGainsToday)}</strong></div>
+                <div className="day-real-row"><span>{t('day.interval')}</span><strong className="gain-text">+{formatNumber(calculations.intervalGainsToday)}</strong></div>
+                <div className="day-real-row total"><span>{t('day.totalGain')}</span><strong className="gain-text">+{formatNumber(calculations.realDayGains)}</strong></div>
               </div>
               <div className="card pad day-real-card consume">
-                <div className="eyebrow">Gastos do dia</div>
-                <div className="day-real-row"><span>Recorrente diário</span><strong className="loss-text">−{formatNumber(calculations.dailyLosses)}</strong></div>
-                <div className="day-real-row"><span>Variáveis (hoje)</span><strong className="loss-text">−{formatNumber(calculations.dailyVariableLosses)}</strong></div>
-                <div className="day-real-row"><span>Semanal (hoje)</span><strong className="loss-text">−{formatNumber(calculations.weeklyLossesToday)}</strong></div>
-                <div className="day-real-row"><span>A cada N dias (hoje)</span><strong className="loss-text">−{formatNumber(calculations.intervalLossesToday)}</strong></div>
-                <div className="day-real-row total"><span>Total gasto</span><strong className="loss-text">−{formatNumber(calculations.realDayLosses)}</strong></div>
+                <div className="eyebrow">{t('day.losses')}</div>
+                <div className="day-real-row"><span>{t('day.daily')}</span><strong className="loss-text">−{formatNumber(calculations.dailyLosses)}</strong></div>
+                <div className="day-real-row"><span>{t('day.variable')}</span><strong className="loss-text">−{formatNumber(calculations.dailyVariableLosses)}</strong></div>
+                <div className="day-real-row"><span>{t('day.weekly')}</span><strong className="loss-text">−{formatNumber(calculations.weeklyLossesToday)}</strong></div>
+                <div className="day-real-row"><span>{t('day.interval')}</span><strong className="loss-text">−{formatNumber(calculations.intervalLossesToday)}</strong></div>
+                <div className="day-real-row total"><span>{t('day.totalLoss')}</span><strong className="loss-text">−{formatNumber(calculations.realDayLosses)}</strong></div>
               </div>
               <div className="card pad day-real-net">
-                <div className="eyebrow">Líquido do dia</div>
+                <div className="eyebrow">{t('day.net')}</div>
                 <div className={`metric-value ${calculations.realDayNet >= 0 ? 'positive' : 'negative'}`} data-testid="value-real-day-net">{formatSigned(calculations.realDayNet)}</div>
-                <div className="metric-label">saldo inicial {formatNumber(active.balance)} → {formatNumber(active.balance + calculations.realDayNet)} no fim do dia</div>
+                <div className="metric-label">{t('day.endOfDay', { start: formatNumber(active.balance), end: formatNumber(active.balance + calculations.realDayNet) })}</div>
               </div>
             </div>
           </section>
 
-          <section className="section stats-grid reveal delay-3" aria-label="Indicadores de ritmo">
-            <StatCard label="Saldo líquido / período" value={formatSigned(calculations.netPeriod)} detail={`a cada ${PERIOD_LABELS[active.period].toLowerCase()}`} tinted />
-            <StatCard label="Resultado por dia" value={formatSigned(calculations.netPerDay)} detail="média linear do ritmo atual" />
-            <StatCard label="Tempo até zerar" value={formatDuration(calculations.depletionMinutes)} detail={calculations.netPerMinute >= 0 ? 'crescendo, não há depletion' : 'a partir do saldo atual'} />
+          <section className="section stats-grid reveal delay-3" aria-label={t('stats.rhythm')}>
+            <StatCard label={t('stats.netPeriod')} value={formatSigned(calculations.netPeriod)} detail={t('stats.everyPeriod', { period: t(`period.${active.period}`).toLowerCase() })} tinted />
+            <StatCard label={t('stats.perDay')} value={formatSigned(calculations.netPerDay)} detail={t('stats.perDayDetail')} />
+            <StatCard label={t('stats.timeToZero')} value={formatDuration(calculations.depletionMinutes)} detail={calculations.netPerMinute >= 0 ? t('stats.growing') : t('stats.fromBalance')} />
           </section>
 
           <section className="section card chart-card" aria-labelledby="chart-title">
             <div className="chart-head">
-              <div><div className="chart-title" id="chart-title">Projeção de saldo</div><div className="chart-subtitle">Uma linha do tempo sem sustos — e um marco claro quando o saldo cruza o zero.</div></div>
-              <div className="horizon-tabs" role="tablist" aria-label="Horizonte da projeção">
+              <div><div className="chart-title" id="chart-title">{t('chart.title')}</div><div className="chart-subtitle">{t('chart.subtitle')}</div></div>
+              <div className="horizon-tabs" role="tablist" aria-label={t('chart.horizon')}>
                 {HORIZONS.map((item) => <button key={item.key} className={`horizon-tab ${horizonKey === item.key ? 'active' : ''}`} onClick={() => setHorizonKey(item.key)} data-testid={`button-horizon-${item.key}`} role="tab" aria-selected={horizonKey === item.key}>{item.label}</button>)}
               </div>
             </div>
@@ -772,48 +767,48 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                   <ChartTooltip
                     cursor={{ stroke: 'hsl(var(--accent))', strokeDasharray: '3 3' }}
                     contentStyle={{ borderRadius: 10, border: '1px solid hsl(var(--border))', background: 'hsl(var(--card))', fontSize: 12 }}
-                    formatter={(value: number) => [`${formatNumber(value)} ${active.resourceName}`, 'Saldo']}
-                    labelFormatter={(value) => `Em ${formatChartTime(Number(value))}`}
+                    formatter={(value: number) => [`${formatNumber(value)} ${active.resourceName}`, t('chart.balance')]}
+                    labelFormatter={(value) => t('chart.at', { time: formatChartTime(Number(value)) })}
                   />
                   <ReferenceLine y={0} stroke="hsl(var(--destructive))" strokeDasharray="5 5" />
-                  {chartDepletion !== undefined && <ReferenceLine x={chartDepletion} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: 'zero', position: 'insideTopRight', fill: 'hsl(var(--destructive))', fontSize: 11 }} />}
+                  {chartDepletion !== undefined && <ReferenceLine x={chartDepletion} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: t('chart.zero'), position: 'insideTopRight', fill: 'hsl(var(--destructive))', fontSize: 11 }} />}
                   <Line type="monotone" dataKey="balance" stroke="hsl(var(--primary))" strokeWidth={3} dot={false} activeDot={{ r: 5, fill: 'hsl(var(--accent))', stroke: 'hsl(var(--card))', strokeWidth: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className="chart-legend"><span><span className="legend-mark balance" />saldo projetado</span><span><span className="legend-mark zero" />linha de segurança</span>{chartDepletion !== undefined && <span><Clock3 size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />zero em {formatDuration(chartDepletion)}</span>}</div>
+            <div className="chart-legend"><span><span className="legend-mark balance" />{t('chart.projected')}</span><span><span className="legend-mark zero" />{t('chart.safety')}</span>{chartDepletion !== undefined && <span><Clock3 size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />{t('chart.zeroIn', { time: formatDuration(chartDepletion) })}</span>}</div>
           </section>
 
-          <section className="section future-grid" aria-label="Projeções futuras">
+          <section className="section future-grid" aria-label={t('future.label')}>
             <div className="card pad">
-              <div className="eyebrow">Horizonte longo</div>
-              <div className="section-heading" style={{ margin: '4px 0 0' }}><div><h2>Se nada mudar</h2><p>Saldo estimado mantendo este mesmo ritmo.</p></div><TrendingUp size={20} color="hsl(var(--chart-3))" /></div>
+              <div className="eyebrow">{t('future.long')}</div>
+              <div className="section-heading" style={{ margin: '4px 0 0' }}><div><h2>{t('future.ifUnchanged')}</h2><p>{t('future.copy')}</p></div><TrendingUp size={20} color="hsl(var(--chart-3))" /></div>
               <div className="horizon-grid">
                 {[1, 7, 30, 365].map((days) => {
                   const value = active.balance + calculations.netPerDay * days;
-                  return <div className="future-item" key={days} data-testid={`future-balance-${days}d`}><div className="future-label">em {days} {days === 1 ? 'dia' : 'dias'}</div><div className={`future-value ${value >= 0 ? 'positive' : 'negative'}`}>{formatSigned(value)}</div></div>;
+                  return <div className="future-item" key={days} data-testid={`future-balance-${days}d`}><div className="future-label">{days === 1 ? t('future.inDay', { days }) : t('future.inDays', { days })}</div><div className={`future-value ${value >= 0 ? 'positive' : 'negative'}`}>{formatSigned(value)}</div></div>;
                 })}
               </div>
             </div>
             <div className="card simulation-card">
-              <div className="eyebrow">E se...</div>
-              <h2 style={{ fontFamily: 'var(--app-font-display)', fontSize: 21, letterSpacing: '-.045em', margin: '4px 0 0' }}>eu mudar o ritmo?</h2>
-              <p className="sim-copy">Compare outra rotina de batalhas e atividades sem mexer no cenário base.</p>
+              <div className="eyebrow">{t('future.whatIf')}</div>
+              <h2 style={{ fontFamily: 'var(--app-font-display)', fontSize: 21, letterSpacing: '-.045em', margin: '4px 0 0' }}>{t('future.changePace')}</h2>
+              <p className="sim-copy">{t('future.simCopy')}</p>
               <div className="sim-fields">
-                <SimulationField label="batalhas / dia" value={active.simulation.battles} onChange={(value) => updateActive({ simulation: { ...active.simulation, battles: value } })} testId="input-simulation-battles" />
-                <SimulationField label="atividades / dia" value={active.simulation.activities} onChange={(value) => updateActive({ simulation: { ...active.simulation, activities: value } })} testId="input-simulation-activities" />
-                <SimulationField label="ajuste de ganhos %" value={active.simulation.gainAdjustment} min={-100} onChange={(value) => updateActive({ simulation: { ...active.simulation, gainAdjustment: value } })} testId="input-simulation-gain-adjustment" allowNegative />
-                <SimulationField label="ajuste de consumo %" value={active.simulation.consumptionAdjustment} min={-100} onChange={(value) => updateActive({ simulation: { ...active.simulation, consumptionAdjustment: value } })} testId="input-simulation-consumption-adjustment" allowNegative />
+                <SimulationField label={t('future.battles')} value={active.simulation.battles} onChange={(value) => updateActive({ simulation: { ...active.simulation, battles: value } })} testId="input-simulation-battles" />
+                <SimulationField label={t('future.activities')} value={active.simulation.activities} onChange={(value) => updateActive({ simulation: { ...active.simulation, activities: value } })} testId="input-simulation-activities" />
+                <SimulationField label={t('future.gainAdj')} value={active.simulation.gainAdjustment} min={-100} onChange={(value) => updateActive({ simulation: { ...active.simulation, gainAdjustment: value } })} testId="input-simulation-gain-adjustment" allowNegative />
+                <SimulationField label={t('future.consumeAdj')} value={active.simulation.consumptionAdjustment} min={-100} onChange={(value) => updateActive({ simulation: { ...active.simulation, consumptionAdjustment: value } })} testId="input-simulation-consumption-adjustment" allowNegative />
               </div>
-              <div className="sim-result"><div className="sim-result-label">saldo simulado em 30 dias</div><div className={`sim-result-value ${simulation.balanceIn30Days >= active.balance ? 'positive' : 'negative'}`} data-testid="value-simulation-30d">{formatSigned(simulation.balanceIn30Days)}</div><div className="sim-result-note">ritmo estimado: {formatSigned(simulation.net)} por dia</div></div>
+              <div className="sim-result"><div className="sim-result-label">{t('future.sim30')}</div><div className={`sim-result-value ${simulation.balanceIn30Days >= active.balance ? 'positive' : 'negative'}`} data-testid="value-simulation-30d">{formatSigned(simulation.balanceIn30Days)}</div><div className="sim-result-note">{t('future.estimated', { value: formatSigned(simulation.net) })}</div></div>
             </div>
           </section>
 
           <section className="section card table-card" aria-labelledby="detail-title">
-            <div className="table-intro"><h2 id="detail-title">Leitura detalhada</h2><p>Todos os valores já normalizados para o período selecionado: {PERIOD_LABELS[active.period].toLowerCase()}.</p></div>
+            <div className="table-intro"><h2 id="detail-title">{t('table.title')}</h2><p>{t('table.copy', { period: t(`period.${active.period}`).toLowerCase() })}</p></div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Fonte</th><th>Tipo</th><th>Cadência</th><th>Ocorrências</th><th>Total / período</th><th>Média / min</th></tr></thead>
+                <thead><tr><th>{t('table.source')}</th><th>{t('table.type')}</th><th>{t('table.cadence')}</th><th>{t('table.occurrences')}</th><th>{t('table.totalPeriod')}</th><th>{t('table.avgMin')}</th></tr></thead>
                 <tbody>
                   {[
                     ...active.gains
@@ -825,7 +820,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                   ].map((source) => (
                     <tr key={`detail-${source.id}`} data-testid={`row-detail-${source.id}`}>
                       <td><strong>{source.name}</strong></td>
-                      <td><span className={`kind-badge ${source.kind}`}>{source.kind === 'gain' ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}{source.kind === 'gain' ? 'ganho' : 'perda'} {isOnce(source) ? 'variável' : 'recorrente'}</span></td>
+                      <td><span className={`kind-badge ${source.kind}`}>{source.kind === 'gain' ? <ArrowUpRight size={11} /> : <ArrowDownLeft size={11} />}{source.kind === 'gain' ? t('table.gain') : t('table.loss')} {isOnce(source) ? t('table.variable') : t('table.recurring')}</span></td>
                       <td>{frequencyLabel(source)}</td>
                       <td className="mono">{formatNumber(source.occurrences, 0)}</td>
                       <td className={`mono ${source.kind === 'gain' ? 'gain-text' : 'loss-text'}`}>{source.kind === 'gain' ? '+' : '−'}{formatNumber(sourceTotal(source, calculations.periodMinutes))}</td>
@@ -836,10 +831,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
               </table>
               {active.gains.filter((source) => !isOnce(source) || isOnceToday(source)).length
                 + active.consumptions.filter((source) => !isOnce(source) || isOnceToday(source)).length === 0
-                && <div className="empty-source">Adicione uma entrada ou saída acima para começar a leitura.</div>}
+                && <div className="empty-source">{t('table.empty')}</div>}
             </div>
           </section>
-          <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Magites Opressoras sincroniza os cenários com o Supabase e mantém uma cópia local neste dispositivo.</footer>
+          <footer className="footer"><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t('footer')}</footer>
         </main>
       </div>
 
@@ -847,35 +842,35 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDraft(null); }}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
             <div className="modal-head">
-              <div><h2 id="source-modal-title" className="modal-title">{draft.id ? 'Editar fonte' : 'Adicionar fonte'}</h2><p className="modal-subtitle">{
+              <div><h2 id="source-modal-title" className="modal-title">{draft.id ? t('modal.edit') : t('modal.add')}</h2><p className="modal-subtitle">{
                 draft.kind === 'gain'
-                  ? (draft.cadence === 'once' ? 'Ganho variável, uma vez.' : 'Ganho que se repete.')
-                  : (draft.cadence === 'once' ? 'Perda variável, uma vez.' : 'Perda que se repete.')
+                  ? (draft.cadence === 'once' ? t('modal.gainOnce') : t('modal.gainRecurring'))
+                  : (draft.cadence === 'once' ? t('modal.lossOnce') : t('modal.lossRecurring'))
               }</p></div>
-              <button className="icon-button" onClick={() => setDraft(null)} aria-label="Fechar editor" data-testid="button-close-source-modal"><X size={17} /></button>
+              <button className="icon-button" onClick={() => setDraft(null)} aria-label={t('actions.closeEditor')} data-testid="button-close-source-modal"><X size={17} /></button>
             </div>
             <div className="source-form">
-              <div><label htmlFor="source-name">Nome da fonte</label><input id="source-name" maxLength={80} autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: cleanInput(event.target.value) })} placeholder={draft.kind === 'gain' ? 'Nome do ganho' : 'Nome da perda'} data-testid="input-source-name" /></div>
+              <div><label htmlFor="source-name">{t('modal.name')}</label><input id="source-name" maxLength={80} autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: cleanInput(event.target.value) })} placeholder={draft.kind === 'gain' ? t('modal.gainPlaceholder') : t('modal.lossPlaceholder')} data-testid="input-source-name" /></div>
               <div className="source-form-grid">
-                <div><label htmlFor="source-amount">Quantidade por ocorrência</label><input id="source-amount" type="number" min="0" max="1000000000000" step="1" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: sanitizeInt(event.target.value, 0, 1_000_000_000_000, 0) })} data-testid="input-source-amount" /></div>
-                <div><label htmlFor="source-occurrences">Ocorrências</label><input id="source-occurrences" type="number" min="1" max="9999" step="1" value={draft.occurrences} onChange={(event) => setDraft({ ...draft, occurrences: sanitizeInt(event.target.value, 1, 9_999, 1) })} data-testid="input-source-occurrences" /></div>
+                <div><label htmlFor="source-amount">{t('modal.amount')}</label><input id="source-amount" type="number" min="0" max="1000000000000" step="1" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: sanitizeInt(event.target.value, 0, 1_000_000_000_000, 0) })} data-testid="input-source-amount" /></div>
+                <div><label htmlFor="source-occurrences">{t('modal.occurrences')}</label><input id="source-occurrences" type="number" min="1" max="9999" step="1" value={draft.occurrences} onChange={(event) => setDraft({ ...draft, occurrences: sanitizeInt(event.target.value, 1, 9_999, 1) })} data-testid="input-source-occurrences" /></div>
               </div>
               {draft.cadence === 'once' ? (
-                <p className="field-help">Entra só no resultado do dia em que for lançada. Amanhã este item some da lista.</p>
+                <p className="field-help">{t('modal.onceHelp')}</p>
               ) : (
                 <>
-                  <div><label htmlFor="source-frequency">Frequência</label><select id="source-frequency" value={draft.frequency === 'once' ? 'day' : draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value as Frequency, intervalDays: draft.intervalDays ?? 15 })} data-testid="select-source-frequency">{RECURRING_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{FREQUENCY_LABELS[frequency]}</option>)}</select></div>
+                  <div><label htmlFor="source-frequency">{t('modal.frequency')}</label><select id="source-frequency" value={draft.frequency === 'once' ? 'day' : draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value as Frequency, intervalDays: draft.intervalDays ?? 15 })} data-testid="select-source-frequency">{RECURRING_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{t(`frequency.${frequency}`)}</option>)}</select></div>
                   {draft.frequency === 'interval' && (
                     <div>
-                      <label htmlFor="source-interval-days">A cada quantos dias?</label>
+                      <label htmlFor="source-interval-days">{t('modal.intervalDays')}</label>
                       <input id="source-interval-days" type="number" min="2" max="3650" step="1" value={draft.intervalDays ?? 15} onChange={(event) => setDraft({ ...draft, intervalDays: sanitizeInt(event.target.value, 2, 3_650, 15) })} data-testid="input-source-interval-days" />
-                      <p className="field-help">Entra no resultado real do dia em que foi cadastrado e de novo a cada {intervalDaysOf(draft)} dias.</p>
+                      <p className="field-help">{t('modal.intervalHelp', { days: intervalDaysOf(draft) })}</p>
                     </div>
                   )}
                 </>
               )}
-              {(!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1) && <p className="form-error">Informe um nome e valores iguais ou maiores que zero.</p>}
-              <div className="source-form-actions"><button className="button" onClick={() => setDraft(null)} data-testid="button-cancel-source">Cancelar</button><button className="button primary" onClick={saveSource} disabled={!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1} data-testid="button-save-source"><Save size={15} /> salvar fonte</button></div>
+              {(!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1) && <p className="form-error">{t('modal.formError')}</p>}
+              <div className="source-form-actions"><button className="button" onClick={() => setDraft(null)} data-testid="button-cancel-source">{t('actions.cancel')}</button><button className="button primary" onClick={saveSource} disabled={!draft.name.trim() || draft.amount < 0 || draft.occurrences < 1} data-testid="button-save-source"><Save size={15} /> {t('actions.saveSource')}</button></div>
             </div>
           </div>
         </div>
@@ -901,35 +896,36 @@ function SourcePanel({
   onEdit: (source: Source) => void;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useLocale();
   const isGain = kind === 'gain';
   const isVariable = cadence === 'once';
   const title = isGain
-    ? (isVariable ? 'Ganhos variáveis (1x)' : 'Ganhos recorrentes')
-    : (isVariable ? 'Perdas variáveis (1x)' : 'Perdas recorrentes');
+    ? (isVariable ? t('sources.onceGains') : t('sources.recurringGains'))
+    : (isVariable ? t('sources.onceLosses') : t('sources.recurringLosses'));
   const empty = isGain
-    ? (isVariable ? 'Nenhum ganho variável hoje.' : 'Nenhum ganho recorrente.')
-    : (isVariable ? 'Nenhuma perda variável hoje.' : 'Nenhuma perda recorrente.');
+    ? (isVariable ? t('sources.emptyOnceGains') : t('sources.emptyRecurringGains'))
+    : (isVariable ? t('sources.emptyOnceLosses') : t('sources.emptyRecurringLosses'));
   return (
     <div className={`card source-panel ${isGain ? '' : 'consume'}`} data-testid={`panel-sources-${kind}-${cadence}`}>
       <div className="source-head">
         <div className="source-head-title">{isGain ? <TrendingUp /> : <TrendingDown />} {title}</div>
-        <button className="button small soft" onClick={onAdd} data-testid={`button-add-source-${kind}-${cadence}`}><Plus size={14} /> adicionar</button>
+        <button className="button small soft" onClick={onAdd} data-testid={`button-add-source-${kind}-${cadence}`}><Plus size={14} /> {t('actions.add')}</button>
       </div>
       <div className="source-list">
         {sources.length === 0 && <div className="empty-source">{empty}</div>}
         {sources.map((source) => (
           <div className="source-row" key={source.id} data-testid={`row-source-${source.id}`}>
-            <div><div className="source-name">{source.name}</div><div className="source-meta">{isVariable ? 'Uma vez' : frequencyLabel(source)} · {formatNumber(source.occurrences, 0)} {source.occurrences === 1 ? 'vez' : 'vezes'}</div></div>
+            <div><div className="source-name">{source.name}</div><div className="source-meta">{isVariable ? t('sources.once') : frequencyLabel(source)} · {formatNumber(source.occurrences, 0)} {source.occurrences === 1 ? t('sources.time') : t('sources.times')}</div></div>
             <div className={`source-amount ${isGain ? 'gain-text' : 'loss-text'}`}>{isGain ? '+' : '−'}{formatNumber(sourceListedTotal(source))}</div>
             <div className="row-actions">
-              <button className="icon-button" onClick={() => onEdit(source)} aria-label={`Editar ${source.name}`} data-testid={`button-edit-source-${source.id}`}><Edit3 size={14} /></button>
-              <button className="icon-button" onClick={() => onDelete(source.id)} aria-label={`Remover ${source.name}`} data-testid={`button-delete-source-${source.id}`}><Trash2 size={14} /></button>
+              <button className="icon-button" onClick={() => onEdit(source)} aria-label={t('sources.edit', { name: source.name })} data-testid={`button-edit-source-${source.id}`}><Edit3 size={14} /></button>
+              <button className="icon-button" onClick={() => onDelete(source.id)} aria-label={t('sources.remove', { name: source.name })} data-testid={`button-delete-source-${source.id}`}><Trash2 size={14} /></button>
             </div>
           </div>
         ))}
       </div>
       <div className={`source-total ${isGain ? 'gain' : 'loss'}`} data-testid={`total-sources-${kind}-${cadence}`}>
-        <span>Total</span>
+        <span>{t('sources.total')}</span>
         <strong>{isGain ? '+' : '−'}{formatNumber(total)}</strong>
       </div>
     </div>
@@ -947,6 +943,7 @@ function SimulationField({ label, value, onChange, testId, min = 0, allowNegativ
 }
 
 function AuthGate() {
+  const { t } = useLocale();
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
 
   useEffect(() => {
@@ -960,8 +957,11 @@ function AuthGate() {
       <div className="app-frame login-frame">
         <LoginBackdrop />
         <div className="login-card card pad">
-          <div className="brand-name">Magites Opressoras</div>
-          <p className="login-copy">Carregando sua sessão...</p>
+          <div className="login-lang">
+            <LanguageSwitcher />
+          </div>
+          <div className="brand-name">{t('brand.name')}</div>
+          <p className="login-copy">{t('login.loading')}</p>
         </div>
       </div>
     );

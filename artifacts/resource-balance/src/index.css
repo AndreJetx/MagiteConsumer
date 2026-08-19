@@ -103,6 +103,33 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .brand-name { font-family: var(--app-font-display); font-size: 18px; font-weight: 700; letter-spacing: -.04em; }
 .brand-subtitle { color: hsl(var(--muted-foreground)); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin-top: 1px; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
+.lang-switch {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  overflow: hidden;
+  background: hsl(var(--card) / .82);
+  min-height: 38px;
+}
+.lang-switch button {
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 0 10px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.lang-switch button.active {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.lang-switch button:hover {
+  color: hsl(var(--foreground));
+}
 .save-note {
   color: hsl(var(--muted-foreground)); font-size: 12px; display: flex; align-items: center; gap: 6px;
 }
@@ -396,6 +423,11 @@ tr:last-child td { border-bottom: 0; }
 .login-card .login-title { text-shadow: 0 2px 14px hsl(270 28% 2% / .75); }
 .login-card .brand-subtitle,
 .login-card .login-copy { color: hsl(var(--foreground) / .82); }
+.login-lang {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px -4px 4px auto;
+}
 .login-title { font-family: var(--app-font-display); font-size: 32px; letter-spacing: -.05em; margin: 22px 0 8px; }
 .login-copy { color: hsl(var(--muted-foreground)); font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
 .login-switch { margin-top: 16px; border: 0; background: none; color: hsl(var(--accent)); font-size: 13px; font-weight: 600; padding: 0; }

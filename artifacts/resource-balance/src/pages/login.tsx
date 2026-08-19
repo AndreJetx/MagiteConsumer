@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { useLocale } from '@/hooks/use-locale';
 import { login, register, type AuthUser } from '@/lib/api';
+import { translateApiError } from '@/lib/i18n';
 import { cleanInput } from '@/lib/sanitize';
 
 export function LoginBackdrop() {
@@ -11,6 +14,7 @@ export function LoginBackdrop() {
 }
 
 export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => void }) {
+  const { t } = useLocale();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,7 +31,7 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => vo
         : await register(email, password);
       onLoggedIn(user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível continuar.');
+      setError(err instanceof Error ? err.message : '__generic__');
     } finally {
       setBusy(false);
     }
@@ -37,34 +41,35 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => vo
     <div className="app-frame login-frame">
       <LoginBackdrop />
       <div className="login-card card pad">
+        <div className="login-lang">
+          <LanguageSwitcher />
+        </div>
         <div className="brand-lockup">
           <div className="brand-mark">
             <img src="/favicon.png" alt="" width={38} height={38} />
           </div>
           <div>
-            <div className="brand-name">Magites Opressoras</div>
-            <div className="brand-subtitle">entre para ver seus cenários</div>
+            <div className="brand-name">{t('brand.name')}</div>
+            <div className="brand-subtitle">{t('brand.loginSubtitle')}</div>
           </div>
         </div>
-        <h1 className="login-title">{mode === 'login' ? 'Entrar' : 'Criar conta'}</h1>
+        <h1 className="login-title">{mode === 'login' ? t('login.enter') : t('login.create')}</h1>
         <p className="login-copy">
-          {mode === 'login'
-            ? 'Use o e-mail da sua conta para abrir seus cálculos.'
-            : 'Cada pessoa fica com os próprios ganhos, perdas e saldo.'}
+          {mode === 'login' ? t('login.enterCopy') : t('login.createCopy')}
         </p>
         <form className="source-form" onSubmit={submit}>
           <div>
-            <label htmlFor="auth-email">E-mail</label>
+            <label htmlFor="auth-email">{t('login.email')}</label>
             <input id="auth-email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(cleanInput(event.target.value, 254).toLowerCase())} data-testid="input-auth-email" />
           </div>
           <div>
-            <label htmlFor="auth-password">Senha</label>
+            <label htmlFor="auth-password">{t('login.password')}</label>
             <input id="auth-password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={6} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value.slice(0, 128))} data-testid="input-auth-password" />
           </div>
-          {error && <p className="form-error">{error}</p>}
+          {error && <p className="form-error">{error === '__generic__' ? t('login.generic') : translateApiError(error)}</p>}
           <div className="source-form-actions">
             <button className="button primary" type="submit" disabled={busy} data-testid="button-auth-submit">
-              {busy ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+              {busy ? t('login.wait') : mode === 'login' ? t('login.enter') : t('login.create')}
             </button>
           </div>
         </form>
@@ -74,7 +79,7 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => vo
           onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
           data-testid="button-auth-switch"
         >
-          {mode === 'login' ? 'Não tem conta? Criar agora' : 'Já tem conta? Entrar'}
+          {mode === 'login' ? t('login.noAccount') : t('login.hasAccount')}
         </button>
       </div>
     </div>
