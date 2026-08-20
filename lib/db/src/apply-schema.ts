@@ -67,9 +67,11 @@ const statements = [
     sim_activities integer not null default 0,
     sim_gain_adjustment double precision not null default 0,
     sim_consumption_adjustment double precision not null default 0,
+    character_stats text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   )`,
+  `alter table ${schema}.scenarios add column if not exists character_stats text`,
   `create table if not exists ${schema}.sources (
     id text primary key,
     scenario_id text not null references ${schema}.scenarios(id) on delete cascade,

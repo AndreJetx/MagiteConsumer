@@ -1,4 +1,5 @@
 import type { AppState, Frequency, Period, Scenario, Source } from './types';
+import { sanitizeCharacterStats } from './character-stats';
 
 const MAX_NAME = 80;
 const MAX_RESOURCE = 40;
@@ -78,6 +79,7 @@ export function sanitizeImportedState(raw: unknown): AppState | null {
         gainAdjustment: sanitizeInt(sim.gainAdjustment, -100, 1_000, 0),
         consumptionAdjustment: sanitizeInt(sim.consumptionAdjustment, -100, 1_000, 0),
       },
+      characterStats: sanitizeCharacterStats((scenario as Scenario).characterStats),
     }];
   });
 

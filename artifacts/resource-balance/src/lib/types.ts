@@ -1,3 +1,5 @@
+import type { CharacterStats } from './character-stats';
+
 export type Period = 'minute' | 'hour' | 'day' | 'week';
 export type Frequency = 'once' | 'minute' | 'hour' | 'day' | 'week' | 'interval';
 export type SourceKind = 'gain' | 'consume';
@@ -28,9 +30,12 @@ export interface Scenario {
   gains: Source[];
   consumptions: Source[];
   simulation: Simulation;
+  characterStats: CharacterStats;
 }
 
 export interface AppState {
   scenarios: Scenario[];
   activeId: string;
 }
+
+export type { CharacterStats };

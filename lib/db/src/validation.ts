@@ -58,6 +58,13 @@ const sourceSchema = z.object({
   intervalDays: safeInt(2, 3_650).optional(),
 });
 
+const characterStatsSchema = z
+  .object({
+    current: z.record(z.string(), z.string().max(40)).default({}),
+    goal: z.record(z.string(), z.string().max(40)).default({}),
+  })
+  .default({ current: { moveSpeed: "6" }, goal: { moveSpeed: "6" } });
+
 const scenarioSchema = z.object({
   id: safeId,
   name: safeName,
@@ -72,6 +79,7 @@ const scenarioSchema = z.object({
     gainAdjustment: safeInt(-100, 1_000),
     consumptionAdjustment: safeInt(-100, 1_000),
   }),
+  characterStats: characterStatsSchema,
 });
 
 export const appStateSchema = z.object({

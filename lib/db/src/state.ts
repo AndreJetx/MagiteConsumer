@@ -1,6 +1,13 @@
 import { eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "./client";
-import { createEmptyScenario, type AppState, type Scenario, type Source } from "./defaults";
+import {
+  createEmptyScenario,
+  emptyCharacterStats,
+  type AppState,
+  type CharacterStats,
+  type Scenario,
+  type Source,
+} from "./defaults";
 import { appSettings, scenarios, sources, userSettings } from "./schema";
 
 function toSource(row: typeof sources.$inferSelect): Source {
@@ -13,6 +20,19 @@ function toSource(row: typeof sources.$inferSelect): Source {
     addedAt: row.addedAt.toISOString(),
     intervalDays: row.intervalDays ?? undefined,
   };
+}
+
+function parseCharacterStats(raw: string | null | undefined): CharacterStats {
+  if (!raw) return emptyCharacterStats();
+  try {
+    const parsed = JSON.parse(raw) as Partial<CharacterStats>;
+    return {
+      current: { moveSpeed: "6", ...(parsed.current ?? {}) },
+      goal: { moveSpeed: "6", ...(parsed.goal ?? {}) },
+    };
+  } catch {
+    return emptyCharacterStats();
+  }
 }
 
 function toScenario(
@@ -36,6 +56,7 @@ function toScenario(
       gainAdjustment: row.simGainAdjustment,
       consumptionAdjustment: row.simConsumptionAdjustment,
     },
+    characterStats: parseCharacterStats(row.characterStats),
   };
 }
 
@@ -153,6 +174,7 @@ async function writeAppState(userId: string, state: AppState): Promise<void> {
         simActivities: scenario.simulation.activities,
         simGainAdjustment: scenario.simulation.gainAdjustment,
         simConsumptionAdjustment: scenario.simulation.consumptionAdjustment,
+        characterStats: JSON.stringify(scenario.characterStats ?? emptyCharacterStats()),
       })),
     );
 

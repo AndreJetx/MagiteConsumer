@@ -42,6 +42,7 @@ export const scenarios = resourceBalance.table("scenarios", {
   simConsumptionAdjustment: doublePrecision("sim_consumption_adjustment")
     .notNull()
     .default(0),
+  characterStats: text("character_stats"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

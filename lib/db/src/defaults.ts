@@ -19,6 +19,11 @@ export interface Simulation {
   consumptionAdjustment: number;
 }
 
+export interface CharacterStats {
+  current: Record<string, string>;
+  goal: Record<string, string>;
+}
+
 export interface Scenario {
   id: string;
   name: string;
@@ -28,11 +33,19 @@ export interface Scenario {
   gains: Source[];
   consumptions: Source[];
   simulation: Simulation;
+  characterStats: CharacterStats;
 }
 
 export interface AppState {
   scenarios: Scenario[];
   activeId: string;
+}
+
+export function emptyCharacterStats(): CharacterStats {
+  return {
+    current: { moveSpeed: "6" },
+    goal: { moveSpeed: "6" },
+  };
 }
 
 export function createEmptyScenario(id = "cenario-inicial"): Scenario {
@@ -50,6 +63,7 @@ export function createEmptyScenario(id = "cenario-inicial"): Scenario {
       gainAdjustment: 0,
       consumptionAdjustment: 0,
     },
+    characterStats: emptyCharacterStats(),
   };
 }
 

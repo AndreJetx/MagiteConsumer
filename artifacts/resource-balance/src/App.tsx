@@ -33,8 +33,10 @@ import { Route, Switch, Router as WouterRouter } from 'wouter';
 import NotFound from '@/pages/not-found';
 import { LoginScreen, LoginBackdrop } from '@/pages/login';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { CharacterStatsPanel } from '@/components/character-stats-panel';
 import { useLocale } from '@/hooks/use-locale';
 import { AuthError, deleteAccount, fetchAppState, fetchCurrentUser, logout, persistAppState, type AuthUser } from '@/lib/api';
+import { emptyCharacterStats, sanitizeCharacterStats } from '@/lib/character-stats';
 import { localeTag, t as tx, translateApiError } from '@/lib/i18n';
 import { clearCachedState, readCachedState, writeCachedState } from '@/lib/storage';
 import { cleanInput, sanitizeInt, sanitizeText } from '@/lib/sanitize';
@@ -78,6 +80,7 @@ function createBlankScenario(name: string): Scenario {
     gains: [],
     consumptions: [],
     simulation: { battles: 0, activities: 0, gainAdjustment: 0, consumptionAdjustment: 0 },
+    characterStats: emptyCharacterStats(),
   };
 }
 
@@ -111,6 +114,7 @@ function stampState(state: AppState): AppState {
     ...state,
     scenarios: state.scenarios.map((scenario) => ({
       ...scenario,
+      characterStats: sanitizeCharacterStats(scenario.characterStats),
       gains: scenario.gains.map(stampSource),
       consumptions: scenario.consumptions.map(stampSource),
     })),
@@ -263,6 +267,7 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [horizonKey, setHorizonKey] = useState<(typeof HORIZONS)[number]['key']>('7d');
+  const [mainTab, setMainTab] = useState<'resources' | 'status'>('resources');
   const skipPersistRef = useRef(true);
   const activeScenario = state.scenarios.find((scenario) => scenario.id === state.activeId);
   const active = activeScenario ?? state.scenarios[0] ?? defaultScenario;
@@ -472,6 +477,10 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
       name: sanitizeText(t('scenario.copySuffix', { name: active.name })),
       gains: active.gains.map((source) => ({ ...source, id: makeId('gain') })),
       consumptions: active.consumptions.map((source) => ({ ...source, id: makeId('consume') })),
+      characterStats: {
+        current: { ...active.characterStats.current },
+        goal: { ...active.characterStats.goal },
+      },
     };
     setState((previous) => ({ scenarios: [...previous.scenarios, copy], activeId: copy.id }));
   };
@@ -589,6 +598,36 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
         </aside>
 
         <main className="main-content">
+          <div className="main-tabs" role="tablist" aria-label={t('tabs.resources')}>
+            <button
+              type="button"
+              role="tab"
+              className={`main-tab ${mainTab === 'resources' ? 'active' : ''}`}
+              aria-selected={mainTab === 'resources'}
+              onClick={() => setMainTab('resources')}
+              data-testid="tab-resources"
+            >
+              {t('tabs.resources')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`main-tab ${mainTab === 'status' ? 'active' : ''}`}
+              aria-selected={mainTab === 'status'}
+              onClick={() => setMainTab('status')}
+              data-testid="tab-status"
+            >
+              {t('tabs.status')}
+            </button>
+          </div>
+
+          {mainTab === 'status' ? (
+            <CharacterStatsPanel
+              stats={active.characterStats}
+              onChange={(characterStats) => updateActive({ characterStats })}
+            />
+          ) : (
+          <>
           <section className="hero reveal" data-testid="section-summary">
             <div className="hero-top">
               <div>
@@ -823,6 +862,8 @@ function App({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
                 && <div className="empty-source">{t('table.empty')}</div>}
             </div>
           </section>
+          </>
+          )}
           <footer className="footer">
             <p><Sparkles size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} /> {t('footer')}</p>
             <p className="gold-disclaimer">{t('disclaimer')}</p>
